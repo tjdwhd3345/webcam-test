@@ -2,6 +2,7 @@ const requestPermissionButton = document.querySelector("#requestPermission");
 const playCameraButton = document.querySelector("#playCamera");
 const stopCameraButton = document.querySelector("#stopCamera");
 
+
 const video = document.querySelector("#video");
 
 const cameraList = document.querySelector("#cameraList");
