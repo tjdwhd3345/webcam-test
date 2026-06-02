@@ -1,0 +1,24 @@
+{
+  "name": "webcam-test",
+  "version": "1.0.0",
+  "description": "",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "http-server -C cert.pem -S key.pem ./"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tjdwhd3345/webcam-test.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/tjdwhd3345/webcam-test/issues"
+  },
+  "homepage": "https://github.com/tjdwhd3345/webcam-test#readme",
+  "dependencies": {
+    "http-server": "^14.1.1"
+  }
+}
