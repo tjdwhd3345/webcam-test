@@ -1,0 +1,9 @@
+services:
+  camera-test-fe:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: alcheradev/ais.camera-test:fe
+    ports:
+      - "8080:80"
+    restart: unless-stopped
