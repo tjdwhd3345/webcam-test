@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IdcardCameraError, mapBrowserErrorToIdcardCameraError } from "./domain/camera/camera_errors.ts";
 import { PrepareIdcardCameraStream } from "./domain/camera/prepare_idcard_camera_stream.ts";
 import { MediaDevicesCameraGateway } from "./infrastructure/camera/media_devices_camera_gateway.ts";
-import { useCameraStream } from "./hook/useCameraStream.ts";
-import type { CameraDeviceInfo, CameraFacingMode, CameraStreamOptions } from "./types/camera.ts";
+import { useCameraStream } from "@asis/hook/useCameraStream";
+import type { CameraDeviceInfo, CameraFacingMode, CameraStreamOptions } from "@asis/types/camera";
 import "./App.css";
 
 type WorkbenchMode = "as-is" | "to-be";
