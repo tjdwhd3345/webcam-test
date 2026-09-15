@@ -11,6 +11,7 @@
     "paths": {
       "@/*": ["src/*"],
       "@asis/*": ["src/asis/*"],
+      "@tobe/*": ["src/tobe/*"],
       "@lib/*": ["src/lib/*"]
     },
 

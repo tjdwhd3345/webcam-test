@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { IdcardCameraError, mapBrowserErrorToIdcardCameraError } from "./domain/camera/camera_errors.ts";
-import { PrepareIdcardCameraStream } from "./domain/camera/prepare_idcard_camera_stream.ts";
-import { MediaDevicesCameraGateway } from "./infrastructure/camera/media_devices_camera_gateway.ts";
+import { IdcardCameraError, mapBrowserErrorToIdcardCameraError } from "@tobe/domain/camera/camera_errors";
+import { PrepareIdcardCameraStream } from "@tobe/domain/camera/prepare_idcard_camera_stream";
+import { MediaDevicesCameraGateway } from "@tobe/infrastructure/camera/media_devices_camera_gateway";
 import { useCameraStream } from "@asis/hook/useCameraStream";
+import type { CameraDeviceInfo as ToBeCameraDeviceInfo } from "@tobe/lib/auth/types/camera";
 import type { CameraDeviceInfo, CameraFacingMode, CameraStreamOptions } from "@asis/types/camera";
 import "./App.css";
 
@@ -46,7 +47,7 @@ type PanelStatus = {
 
 type ToBeState = {
   stream: MediaStream | null;
-  selectedDevice: CameraDeviceInfo | null;
+  selectedDevice: ToBeCameraDeviceInfo | null;
   actualSettings: MediaTrackSettings | null;
   resolutionAttempt: "preferred" | "fallback" | null;
   isStreaming: boolean;
@@ -196,7 +197,7 @@ const toAsIsDeviceOptions = (device: RawMediaDevice): CameraStreamOptions => ({
   retryCount: 1,
 });
 
-const asDeviceInfo = (device: RawMediaDevice | null): CameraDeviceInfo | null => {
+const asDeviceInfo = (device: RawMediaDevice | null): ToBeCameraDeviceInfo | null => {
   if (!device || device.kind !== "videoinput") return null;
 
   return {
