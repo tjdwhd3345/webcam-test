@@ -31,6 +31,7 @@ export function ToBeCameraPanel() {
   const [preparationDetails, setPreparationDetails] = useState<CameraPreparationDetailsView | null>(null);
   const manualStreamRef = useRef<MediaStream | null>(null);
   const mountedRef = useRef(true);
+  const operationIdRef = useRef(0);
 
   const releaseManualStream = useCallback(() => {
     gateway.stopStream(manualStreamRef.current);
@@ -49,15 +50,23 @@ export function ToBeCameraPanel() {
   }, [gateway, requireEnvironmentCamera]);
 
   const startAutomatic = useCallback(async () => {
+    const operationId = operationIdRef.current + 1;
+    operationIdRef.current = operationId;
     releaseManualStream();
     setPreparationDetails(null);
 
-    const result = await prepareStream({
-      target: "idcard_front",
-      requireEnvironmentCamera,
-    });
+    let result: Awaited<ReturnType<typeof prepareStream>>;
+    try {
+      result = await prepareStream({
+        target: "idcard_front",
+        requireEnvironmentCamera,
+      });
+    } catch (error) {
+      if (!mountedRef.current || operationId !== operationIdRef.current) return;
+      throw error;
+    }
 
-    if (!mountedRef.current) return;
+    if (!mountedRef.current || operationId !== operationIdRef.current) return;
     setPreparationDetails({
       selectionReason: result.selectionReason,
       facingAssessment: result.facingAssessment,
@@ -72,6 +81,8 @@ export function ToBeCameraPanel() {
 
   const startManualDevice = useCallback(
     async (rawDevice: RawMediaDevice) => {
+      const operationId = operationIdRef.current + 1;
+      operationIdRef.current = operationId;
       stopStream();
       releaseManualStream();
       setPreparationDetails(null);
@@ -82,9 +93,15 @@ export function ToBeCameraPanel() {
         facingMode: rawDevice.facingMode,
         capabilities: rawDevice.capabilities,
       };
-      const stream = await gateway.openStream(toExactDeviceConstraints(rawDevice));
+      let stream: MediaStream;
+      try {
+        stream = await gateway.openStream(toExactDeviceConstraints(rawDevice));
+      } catch (error) {
+        if (!mountedRef.current || operationId !== operationIdRef.current) return;
+        throw error;
+      }
 
-      if (!mountedRef.current) {
+      if (!mountedRef.current || operationId !== operationIdRef.current) {
         gateway.stopStream(stream);
         return;
       }
@@ -103,6 +120,7 @@ export function ToBeCameraPanel() {
   );
 
   const stopAllStreams = useCallback(() => {
+    operationIdRef.current += 1;
     stopStream();
     releaseManualStream();
     setPreparationDetails(null);
@@ -124,6 +142,7 @@ export function ToBeCameraPanel() {
 
     return () => {
       mountedRef.current = false;
+      operationIdRef.current += 1;
       stopStream();
       gateway.stopStream(manualStreamRef.current);
       manualStreamRef.current = null;

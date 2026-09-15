@@ -272,6 +272,7 @@ export function CameraPanel({
   onRequireEnvironmentCameraChange,
   onVideoPlayFailure,
 }: CameraPanelProps) {
+  const actionIdRef = useRef(0);
   const [status, setStatus] = useState<PanelStatus>({
     permission: "unknown",
     action: null,
@@ -316,15 +317,17 @@ export function CameraPanel({
   );
 
   const runAction = async (action: CameraAction, task: () => Promise<void>, owner?: StreamOwner) => {
+    const actionId = actionIdRef.current + 1;
+    actionIdRef.current = actionId;
     patchStatus({ action, error: null });
 
     try {
       await task();
-      if (owner) patchStatus({ owner });
+      if (owner && actionId === actionIdRef.current) patchStatus({ owner });
     } catch (error) {
-      patchStatus({ error: toErrorMessage(error) });
+      if (actionId === actionIdRef.current) patchStatus({ error: toErrorMessage(error) });
     } finally {
-      patchStatus({ action: null });
+      if (actionId === actionIdRef.current) patchStatus({ action: null });
     }
   };
 
@@ -357,8 +360,9 @@ export function CameraPanel({
   };
 
   const handleStop = () => {
+    actionIdRef.current += 1;
     onStop();
-    patchStatus({ owner: null, error: null });
+    patchStatus({ action: null, owner: null, error: null });
   };
 
   const handleVideoPlayFailure = useCallback(
@@ -421,7 +425,12 @@ export function CameraPanel({
         <button type="button" onClick={handlePlaySelected} disabled={status.action !== null || !selectedRawDevice}>
           {status.action === "selected" ? "선택 실행 중" : manualActionLabel}
         </button>
-        <button type="button" className="secondary" onClick={handleStop} disabled={!isStreaming && !stream}>
+        <button
+          type="button"
+          className="secondary"
+          onClick={handleStop}
+          disabled={status.action !== "rear" && status.action !== "selected" && !isStreaming && !stream}
+        >
           정지
         </button>
       </div>
