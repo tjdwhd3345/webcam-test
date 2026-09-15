@@ -34,6 +34,8 @@ export interface CameraPanelProps {
   selectedDevice: SelectedCameraDevice | null;
   resolutionAttempt?: string | null;
   isStreaming: boolean;
+  isLoading?: boolean;
+  hookError?: unknown;
   automaticRequestInfo?: Record<string, unknown>;
   getManualRequestInfo?: (device: RawMediaDevice) => Record<string, unknown>;
   requireEnvironmentCamera?: boolean;
@@ -124,12 +126,14 @@ function StatusStrip({
   owner,
   selectedDevice,
   resolutionAttempt,
+  isLoading,
 }: {
   permission: PermissionState | "unknown";
   stream: MediaStream | null;
   owner: StreamOwner;
   selectedDevice: SelectedCameraDevice | null;
   resolutionAttempt?: string | null;
+  isLoading: boolean;
 }) {
   const settings = stream?.getVideoTracks()[0]?.getSettings?.();
   const resolution = settings?.width && settings.height ? `${settings.width}x${settings.height}` : "-";
@@ -137,8 +141,8 @@ function StatusStrip({
   return (
     <div className="status-grid" aria-live="polite">
       <span>권한: {permission}</span>
-      <span>스트림: {stream ? "playing" : "stopped"}</span>
-      <span>실행: {owner ?? "-"}</span>
+      <span>스트림: {isLoading ? "loading" : stream ? "playing" : "stopped"}</span>
+      <span>실행: {stream ? owner ?? "rear" : "-"}</span>
       <span>해상도: {resolution}</span>
       <span>시도: {resolutionAttempt ?? "-"}</span>
       <span>장치: {selectedDevice?.label ?? "-"}</span>
@@ -257,6 +261,8 @@ export function CameraPanel({
   selectedDevice,
   resolutionAttempt,
   isStreaming,
+  isLoading = false,
+  hookError,
   automaticRequestInfo,
   getManualRequestInfo = createDefaultManualRequestInfo,
   requireEnvironmentCamera,
@@ -273,6 +279,7 @@ export function CameraPanel({
   onVideoPlayFailure,
 }: CameraPanelProps) {
   const actionIdRef = useRef(0);
+  useEffect(() => () => { actionIdRef.current += 1; }, []);
   const [status, setStatus] = useState<PanelStatus>({
     permission: "unknown",
     action: null,
@@ -316,13 +323,13 @@ export function CameraPanel({
     [snapshot],
   );
 
-  const runAction = async (action: CameraAction, task: () => Promise<void>, owner?: StreamOwner) => {
+  const runAction = async (action: CameraAction, task: (isCurrent: () => boolean) => Promise<void>, owner?: StreamOwner) => {
     const actionId = actionIdRef.current + 1;
     actionIdRef.current = actionId;
-    patchStatus({ action, error: null });
+    patchStatus({ action, error: null, owner: null });
 
     try {
-      await task();
+      await task(() => actionId === actionIdRef.current);
       if (owner && actionId === actionIdRef.current) patchStatus({ owner });
     } catch (error) {
       if (actionId === actionIdRef.current) patchStatus({ error: toErrorMessage(error) });
@@ -332,14 +339,16 @@ export function CameraPanel({
   };
 
   const handlePermission = () => {
-    void runAction("permission", async () => {
-      patchStatus({ permission: await onRequestPermission() });
+    void runAction("permission", async (isCurrent) => {
+      const permission = await onRequestPermission();
+      if (isCurrent()) patchStatus({ permission });
     });
   };
 
   const handleLoadDevices = () => {
-    void runAction("devices", async () => {
+    void runAction("devices", async (isCurrent) => {
       const devices = await onEnumerateDevices();
+      if (!isCurrent()) return;
       const nextVideoDevices = getVideoInputDevices(devices);
       patchStatus({
         mediaDevices: devices,
@@ -372,6 +381,8 @@ export function CameraPanel({
     },
     [onVideoPlayFailure, patchStatus],
   );
+  const busy = status.action !== null || isLoading;
+  const errorMessage = status.error ?? (hookError ? toErrorMessage(hookError) : null);
 
   return (
     <section className="camera-panel" data-mode={mode}>
@@ -383,11 +394,11 @@ export function CameraPanel({
         </div>
       </div>
 
-      <StatusStrip permission={status.permission} stream={stream} owner={status.owner} selectedDevice={selectedDevice} resolutionAttempt={resolutionAttempt} />
+      <StatusStrip permission={status.permission} stream={stream} owner={status.owner} selectedDevice={selectedDevice} resolutionAttempt={resolutionAttempt} isLoading={isLoading} />
 
-      {status.error ? (
+      {errorMessage ? (
         <div className="error-panel" role="alert">
-          {status.error}
+          {errorMessage}
         </div>
       ) : null}
 
@@ -397,39 +408,40 @@ export function CameraPanel({
             type="checkbox"
             aria-label="모바일 후면 카메라 강제"
             checked={requireEnvironmentCamera === true}
+            disabled={busy}
             onChange={(event) => onRequireEnvironmentCameraChange(event.target.checked)}
           />
           <span>
             <strong>모바일 후면 카메라 강제</strong>
-            <small>후면으로 검증된 장치와 exact 제약만 허용합니다.</small>
+            <small>확인된 전면은 제외합니다. 후면은 exact, 방향 미상 호환 후보는 ideal 제약으로 시도합니다.</small>
           </span>
         </label>
       ) : null}
 
       <div className="control-grid">
-        <button type="button" onClick={handlePermission} disabled={status.action !== null}>
+        <button type="button" onClick={handlePermission} disabled={busy}>
           {status.action === "permission" ? "권한 확인 중" : "카메라 권한"}
         </button>
-        <button type="button" onClick={handleStartAutomatic} disabled={status.action !== null}>
+        <button type="button" onClick={handleStartAutomatic} disabled={busy}>
           {status.action === "rear" ? "후면 실행 중" : "후면 카메라 실행"}
         </button>
-        <button type="button" onClick={handleLoadDevices} disabled={status.action !== null}>
+        <button type="button" onClick={handleLoadDevices} disabled={busy}>
           {status.action === "devices" ? "조회 중" : "카메라 목록 조회"}
         </button>
         <DeviceSelect
           devices={status.mediaDevices}
           selectedDeviceId={status.selectedDeviceId}
-          disabled={status.action !== null}
+          disabled={busy}
           onChange={(deviceId) => patchStatus({ selectedDeviceId: deviceId })}
         />
-        <button type="button" onClick={handlePlaySelected} disabled={status.action !== null || !selectedRawDevice}>
+        <button type="button" onClick={handlePlaySelected} disabled={busy || !selectedRawDevice}>
           {status.action === "selected" ? "선택 실행 중" : manualActionLabel}
         </button>
         <button
           type="button"
           className="secondary"
           onClick={handleStop}
-          disabled={status.action !== "rear" && status.action !== "selected" && !isStreaming && !stream}
+          disabled={!busy && !isStreaming && !stream}
         >
           정지
         </button>

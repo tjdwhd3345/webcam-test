@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "types": ["vite/client", "node", "@testing-library/jest-dom"]
+  },
+  "include": [
+    "src/testbench/**/*.ts",
+    "src/testbench/**/*.tsx",
+    "src/tobe/domain/camera/__tests__/prepare_idcard_camera_stream.test.ts"
+  ],
+  "exclude": []
+}

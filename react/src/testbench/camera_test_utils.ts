@@ -44,8 +44,12 @@ const toRawMediaDevice = (device: MediaDeviceInfo): RawMediaDevice => {
 };
 
 export const requestCameraPermission = async (): Promise<PermissionState | "unknown"> => {
-  const stream = await getMediaDevices().getUserMedia({ video: true, audio: false });
-  stopMediaStream(stream);
+  let stream: MediaStream | null = null;
+  try {
+    stream = await getMediaDevices().getUserMedia({ video: true, audio: false });
+  } finally {
+    stopMediaStream(stream);
+  }
 
   if (!navigator.permissions?.query) return "unknown";
 

@@ -1,7 +1,8 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useCameraStream } from "@asis/hook/useCameraStream";
 import type { CameraStreamOptions } from "@asis/types/camera";
 import { CameraPanel } from "./CameraPanel";
+import { runCameraOperation } from "./camera_operation_queue";
 import type { RawMediaDevice } from "./camera_test_types";
 import { loadAllMediaDevices, requestCameraPermission } from "./camera_test_utils";
 
@@ -31,17 +32,41 @@ const toAsIsDeviceOptions = (device: RawMediaDevice): CameraStreamOptions => ({
 export function AsIsCameraPanel() {
   const camera = useCameraStream();
   const { startStream, stopStream } = camera;
+  const operationIdRef = useRef(0);
+  const [streamIntent, setStreamIntent] = useState(false);
+  const stop = useCallback(() => {
+    operationIdRef.current += 1;
+    setStreamIntent(false);
+    stopStream();
+  }, [stopStream]);
+  useEffect(() => () => { operationIdRef.current += 1; }, []);
 
   const startAutomatic = useCallback(async () => {
-    await startStream(IDCARD_CAMERA_OPTIONS);
-  }, [startStream]);
+    stop();
+    setStreamIntent(true);
+    const operationId = operationIdRef.current;
+    await runCameraOperation(async () => {
+      if (operationId === operationIdRef.current) await startStream(IDCARD_CAMERA_OPTIONS);
+    });
+  }, [startStream, stop]);
 
   const startManualDevice = useCallback(
     async (device: RawMediaDevice) => {
-      await startStream(toAsIsDeviceOptions(device));
+      stop();
+      setStreamIntent(true);
+      const operationId = operationIdRef.current;
+      await runCameraOperation(async () => {
+        if (operationId === operationIdRef.current) await startStream(toAsIsDeviceOptions(device));
+      });
     },
-    [startStream],
+    [startStream, stop],
   );
+
+  const requestPermission = useCallback(async () => {
+    stop();
+    const operationId = operationIdRef.current;
+    return runCameraOperation(async () => operationId === operationIdRef.current ? requestCameraPermission() : "unknown");
+  }, [stop]);
 
   return (
     <CameraPanel
@@ -51,6 +76,8 @@ export function AsIsCameraPanel() {
       stream={camera.stream}
       selectedDevice={camera.currentDevice}
       isStreaming={camera.isStreaming}
+      isLoading={streamIntent && camera.isLoading}
+      hookError={streamIntent ? camera.error : null}
       automaticRequestInfo={{ mode: "as-is", action: "rear-camera", options: IDCARD_CAMERA_OPTIONS }}
       getManualRequestInfo={(device) => ({
         mode: "as-is",
@@ -58,11 +85,11 @@ export function AsIsCameraPanel() {
         selectedDevice: { deviceId: device.deviceId, label: device.label },
         options: toAsIsDeviceOptions(device),
       })}
-      onRequestPermission={requestCameraPermission}
+      onRequestPermission={requestPermission}
       onEnumerateDevices={loadAllMediaDevices}
       onStartAutomatic={startAutomatic}
       onStartManualDevice={startManualDevice}
-      onStop={stopStream}
+      onStop={stop}
     />
   );
 }

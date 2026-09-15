@@ -26,15 +26,19 @@ TO-BE 소스 기준은 `ais-kyc.fe`의 커밋 `e1cb24c7`입니다. Sentry 연동
 2. 영상, 선택 장치, 해상도, settings/capabilities를 기록하고 `정지`합니다.
 3. `TO-BE`로 전환합니다. 전환 직후 AS-IS 카메라 표시등이 꺼졌는지 확인합니다.
 4. 모바일 브라우저에서는 기본 활성화된 `모바일 후면 카메라 강제`를 유지합니다. 데스크톱에서 모바일 조건을 재현할 때는 직접 체크합니다.
-5. `후면 카메라 실행` 후 production 준비 결과가 `verified_environment`, `environment`, `preferred`, `valid`인지 확인합니다.
+5. `후면 카메라 실행` 후 선택 사유, 방향, 해상도 시도와 `valid` 여부를 기록합니다. 확인된 후면 장치는 `verified_environment`가 표시됩니다. 방향 미상 장치는 strict 모드에서도 `unknown_compatibility` 후보가 될 수 있으며, 이때 facing 제약은 `ideal`입니다. 데스크톱은 전면/방향 미상 및 기본 장치(`default_compatibility`)도 호환 경로로 허용합니다. `preferred` 해상도가 지원되지 않으면 `fallback`으로 성공할 수 있습니다.
 6. `카메라 목록 조회` 후 일반 후면 카메라는 통과하고 ultra/wide 계열은 `excluded_by_label` 또는 `excluded_by_zoom_min`으로 제외되는지 확인합니다.
 7. 장치를 선택하고 `선택 장치 직접 재생 (진단)`을 실행해 직접 재생 검증과 실제 settings/capabilities를 확인합니다.
 8. 다른 장치를 직접 재생하거나 모드를 전환했을 때 이전 카메라 표시등이 꺼지는지 확인합니다.
 9. 브라우저가 `video.play()`를 거절하면 현재 자동 스트림 또는 직접 재생 스트림에 해당하는 오류만 화면에 표시되는지 확인합니다.
 
+권한 요청과 TO-BE 장치 조회는 현재 재생을 정지한 뒤 실행합니다. 정지/모드 전환으로 취소한 명시적 실행이 브라우저 응답을 기다리는 중이면, 다음 명시적 실행은 이전 결과 정리가 끝날 때까지 대기합니다. 복사된 hook 내부의 초기 장치 조회 및 자동 복구는 원본 동작을 유지합니다. 복구가 스트림을 교체하면 이전 준비 결과는 숨기며, 진행 상태와 hook 오류를 표시합니다.
+
 ## 자동 검증
 
 ```bash
 npm test -- --run
+npm run lint
+npx tsc -p tsconfig.testbench.json
 npm run build
 ```

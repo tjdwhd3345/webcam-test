@@ -30,16 +30,16 @@ const createConstraintError = (name: "OverconstrainedError" | "ConstraintNotSati
 
 const defaultPermissionStream = () => createStream({ deviceId: "main", facingMode: "environment", width: 640, height: 480 });
 const defaultDevices = (): CameraDeviceInfo[] => [{ deviceId: "main", label: "Back Camera", facingMode: "environment" }];
-const createOpenStreamMock = (stream: MediaStream) => vi.fn<Promise<MediaStream>, [MediaStreamConstraints]>(() => Promise.resolve(stream));
+const createOpenStreamMock = (stream: MediaStream) => vi.fn<IdcardCameraGateway["openStream"]>(() => Promise.resolve(stream));
 const createEnumerateVideoInputsMock = (devices: CameraDeviceInfo[]) =>
-  vi.fn<Promise<CameraDeviceInfo[]>, [Parameters<IdcardCameraGateway["enumerateVideoInputs"]>[0]]>(() => Promise.resolve(devices));
+  vi.fn<IdcardCameraGateway["enumerateVideoInputs"]>(() => Promise.resolve(devices));
 
 const createGateway = (overrides: Partial<MockGateway> = {}): MockGateway => ({
   isSupported: vi.fn(() => true),
   queryPermission: vi.fn(() => Promise.resolve("prompt")),
-  requestPermission: vi.fn<Promise<MediaStream>, [MediaStreamConstraints?]>(() => Promise.resolve(defaultPermissionStream())),
+  requestPermission: vi.fn<IdcardCameraGateway["requestPermission"]>(() => Promise.resolve(defaultPermissionStream())),
   enumerateVideoInputs: createEnumerateVideoInputsMock(defaultDevices()),
-  openStream: vi.fn<Promise<MediaStream>, [MediaStreamConstraints]>(() => Promise.resolve(createStream({ deviceId: "main", facingMode: "environment", width: 1920, height: 1080 }))),
+  openStream: vi.fn<IdcardCameraGateway["openStream"]>(() => Promise.resolve(createStream({ deviceId: "main", facingMode: "environment", width: 1920, height: 1080 }))),
   stopStream: vi.fn(),
   ...overrides,
 });

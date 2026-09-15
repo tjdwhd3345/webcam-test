@@ -2,6 +2,7 @@ import { act, cleanup, render, screen, waitFor, within } from "@testing-library/
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ToBeCameraPanel } from "../ToBeCameraPanel";
+import { AsIsCameraPanel } from "../AsIsCameraPanel";
 
 const originalMediaDevices = navigator.mediaDevices;
 const originalPermissions = navigator.permissions;
@@ -154,6 +155,127 @@ afterEach(() => {
 });
 
 describe("ToBeCameraPanel", () => {
+  it("권한 prompt에서 bootstrap을 요청하고 정리한 다음 권한 상태를 표시한다", async () => {
+    const permissionTrack = createVideoTrack();
+    let permission: PermissionState = "prompt";
+    const getUserMedia = vi.fn(async () => {
+      permission = "granted";
+      return createMediaStream(permissionTrack.track, "permission-bootstrap");
+    });
+    installBrowserBoundary(getUserMedia);
+    vi.spyOn(navigator.permissions, "query").mockImplementation(async () => ({ state: permission }) as PermissionStatus);
+    render(<ToBeCameraPanel />);
+    await userEvent.click(screen.getByRole("button", { name: "카메라 권한" }));
+    expect(getUserMedia).toHaveBeenCalledWith({ video: true, audio: false });
+    expect(permissionTrack.stop).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("권한: granted")).toBeInTheDocument();
+  });
+
+  it.each(["permission", "enumeration"])("%s 진단은 기존 owner를 먼저 해제하여 probe와 겹치지 않는다", async (action) => {
+    const live = new Set<MediaStreamTrack>();
+    let peak = 0;
+    const getUserMedia = vi.fn(async () => {
+      const { track, stop } = createVideoTrack();
+      live.add(track);
+      peak = Math.max(peak, live.size);
+      stop.mockImplementation(() => live.delete(track));
+      return createMediaStream(track, `stream-${getUserMedia.mock.calls.length}`);
+    });
+    const { enumerateDevices } = installBrowserBoundary(getUserMedia);
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+    const view = render(<ToBeCameraPanel />);
+    await userEvent.click(screen.getByRole("button", { name: "후면 카메라 실행" }));
+    expect(await screen.findByRole("region", { name: "준비 결과" })).toBeInTheDocument();
+    // Legacy InputDeviceInfo forces the real gateway to open capability probes.
+    enumerateDevices.mockResolvedValue([{ deviceId: "back-main", kind: "videoinput", label: "Back Camera", groupId: "back", toJSON: () => ({}) }]);
+    await userEvent.click(screen.getByRole("button", { name: action === "permission" ? "카메라 권한" : "카메라 목록 조회" }));
+    expect(peak).toBe(1);
+    expect(live.size).toBe(0);
+    expect(screen.queryByRole("region", { name: "준비 결과" })).not.toBeInTheDocument();
+    expect(screen.getByText("실행: -")).toBeInTheDocument();
+    view.unmount();
+    expect(live.size).toBe(0);
+  });
+
+  it.each(["permission", "manual", "enumeration"])("%s의 브라우저 거절을 도메인 오류로 표시한다", async (action) => {
+    const getUserMedia = vi.fn().mockRejectedValue(new DOMException("blocked by browser", "NotAllowedError"));
+    const { enumerateDevices } = installBrowserBoundary(getUserMedia);
+    render(<ToBeCameraPanel />);
+    if (action === "manual") await userEvent.click(screen.getByRole("button", { name: "카메라 목록 조회" }));
+    if (action === "enumeration") enumerateDevices.mockRejectedValue(new DOMException("blocked by browser", "NotAllowedError"));
+    await userEvent.click(screen.getByRole("button", { name: action === "manual" ? "선택 장치 직접 재생 (진단)" : action === "permission" ? "카메라 권한" : "카메라 목록 조회" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("camera_permission_denied");
+  });
+
+  it("manual 스트림의 settings 조회가 실패하면 열린 스트림을 정리하고 도메인 오류를 표시한다", async () => {
+    const { track, stop } = createVideoTrack();
+    vi.mocked(track.getSettings).mockImplementation(() => { throw new DOMException("settings unavailable", "NotReadableError"); });
+    installBrowserBoundary(vi.fn(async () => createMediaStream(track, "unreadable-manual")));
+    render(<ToBeCameraPanel />);
+    await userEvent.click(screen.getByRole("button", { name: "카메라 목록 조회" }));
+    await userEvent.click(screen.getByRole("button", { name: "선택 장치 직접 재생 (진단)" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("camera_not_readable");
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("스트림: stopped")).toBeInTheDocument();
+  });
+
+  it.each(["denied", "replaced"])("복구 중 loading을 표시하고 %s 후 이전 준비 결과를 제거한다", async (outcome) => {
+    const recovery = createDeferred<MediaStream>();
+    let calls = 0;
+    const getUserMedia = vi.fn(() => {
+      calls += 1;
+      return calls === 3 ? recovery.promise : Promise.resolve(createMediaStream(createVideoTrack().track, `stream-${calls}`));
+    });
+    installBrowserBoundary(getUserMedia);
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+    render(<ToBeCameraPanel />);
+    await userEvent.click(screen.getByRole("button", { name: "후면 카메라 실행" }));
+    expect(await screen.findByRole("region", { name: "준비 결과" })).toBeInTheDocument();
+    act(() => {
+      window.dispatchEvent(new Event("pagehide"));
+      window.dispatchEvent(new Event("pageshow"));
+    });
+    await waitFor(() => expect(calls).toBe(3));
+    expect(screen.getByRole("button", { name: "카메라 목록 조회" })).toBeDisabled();
+    expect(screen.getByText("스트림: loading")).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "준비 결과" })).not.toBeInTheDocument();
+    await act(async () => {
+      if (outcome === "denied") recovery.reject(new DOMException("recovery denied", "NotAllowedError"));
+      else recovery.resolve(createMediaStream(createVideoTrack().track, "recovery-bootstrap"));
+      await Promise.resolve();
+    });
+    if (outcome === "denied") {
+      expect(await screen.findByRole("alert")).toHaveTextContent("camera_permission_denied");
+      expect(screen.getByText("실행: -")).toBeInTheDocument();
+    } else expect(await screen.findByText("스트림: playing")).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "준비 결과" })).not.toBeInTheDocument();
+  });
+
+  it("정지한 장치 조회의 늦은 결과가 정책 표나 장치 목록으로 돌아오지 않는다", async () => {
+    const enumeration = createDeferred<MediaDeviceInfo[]>();
+    const { enumerateDevices } = installBrowserBoundary(vi.fn());
+    enumerateDevices.mockReturnValue(enumeration.promise);
+    render(<ToBeCameraPanel />);
+    await userEvent.click(screen.getByRole("button", { name: "카메라 목록 조회" }));
+    expect(screen.getByRole("button", { name: "정지" })).toBeEnabled();
+    await userEvent.click(screen.getByRole("button", { name: "정지" }));
+    await act(async () => {
+      enumeration.resolve([createInputDevice("late", "Late Camera")]);
+      await enumeration.promise;
+    });
+    expect(screen.queryByRole("table", { name: "카메라 정책 결정" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /Late Camera/ })).not.toBeInTheDocument();
+  });
+
+  it("AS-IS hook이 삼킨 권한 거절을 화면에 표시하며 owner로 표시하지 않는다", async () => {
+    installBrowserBoundary(vi.fn().mockRejectedValue(new DOMException("blocked", "NotAllowedError")));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    render(<AsIsCameraPanel />);
+    await userEvent.click(screen.getByRole("button", { name: "후면 카메라 실행" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("NotAllowedError");
+    expect(screen.getByText("실행: -")).toBeInTheDocument();
+  });
+
   it("모바일 strict 모드에서 production 흐름과 검증 결과를 표시한다", async () => {
     const getUserMedia = vi.fn(async () => createMediaStream(createVideoTrack().track, `stream-${getUserMedia.mock.calls.length}`));
     installBrowserBoundary(getUserMedia);
@@ -343,7 +465,7 @@ describe("ToBeCameraPanel", () => {
     expect(getRenderedExecution()).toHaveTextContent("manual-stream-2");
   });
 
-  it("pending 자동 요청을 정지한 뒤 시작한 manual만 owner가 되고 늦은 자동 스트림은 정리한다", async () => {
+  it("pending 자동 요청을 정지하면 정리가 끝난 뒤 manual을 열고 늦은 자동 결과는 버린다", async () => {
     const permissionDeferred = createDeferred<MediaStream>();
     const permissionTrack = createVideoTrack();
     const staleAutomaticTrack = createVideoTrack();
@@ -369,8 +491,8 @@ describe("ToBeCameraPanel", () => {
     await user.click(stopButton);
     expect(screen.getByRole("button", { name: "선택 장치 직접 재생 (진단)" })).toBeEnabled();
     await user.click(screen.getByRole("button", { name: "선택 장치 직접 재생 (진단)" }));
-    expect(await screen.findByText("실행: selected")).toBeInTheDocument();
-    expect(getRenderedExecution()).toHaveTextContent("overlap-manual-stream");
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("스트림: stopped")).toBeInTheDocument();
 
     await act(async () => {
       permissionDeferred.resolve(createMediaStream(permissionTrack.track, "late-permission-stream"));
@@ -378,10 +500,35 @@ describe("ToBeCameraPanel", () => {
     });
 
     await waitFor(() => expect(staleAutomaticTrack.stop).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText("실행: selected")).toBeInTheDocument();
     expect(permissionTrack.stop).toHaveBeenCalledTimes(1);
     expect(getRenderedExecution()).toHaveTextContent("overlap-manual-stream");
     expect(getRenderedExecution()).not.toHaveTextContent("stale-automatic-stream");
     expect(manualTrack.stop).not.toHaveBeenCalled();
+  });
+
+  it("늦은 permission bootstrap을 정지하면 정리 후 다음 manual을 열고 권한 결과는 버린다", async () => {
+    const permission = createDeferred<MediaStream>();
+    const bootstrap = createVideoTrack();
+    const manual = createVideoTrack();
+    const getUserMedia = vi.fn((constraints: MediaStreamConstraints) => constraints.video === true
+      ? permission.promise
+      : Promise.resolve(createMediaStream(manual.track, "after-bootstrap")));
+    installBrowserBoundary(getUserMedia);
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+    render(<ToBeCameraPanel />);
+    await userEvent.click(screen.getByRole("button", { name: "카메라 목록 조회" }));
+    await userEvent.click(screen.getByRole("button", { name: "카메라 권한" }));
+    await userEvent.click(screen.getByRole("button", { name: "정지" }));
+    await userEvent.click(screen.getByRole("button", { name: "선택 장치 직접 재생 (진단)" }));
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      permission.resolve(createMediaStream(bootstrap.track, "late-bootstrap"));
+      await permission.promise;
+    });
+    expect(await screen.findByText("실행: selected")).toBeInTheDocument();
+    expect(bootstrap.stop).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("권한: unknown")).toBeInTheDocument();
   });
 
   it("active 및 pending manual을 정지하고 replacement의 늦은 스트림을 owner로 채택하지 않는다", async () => {
