@@ -1,10 +1,13 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { AsIsCameraPanel } from "./testbench/AsIsCameraPanel";
 import { getRuntimeCapabilities } from "./testbench/camera_test_utils";
+import { ToBeCameraPanel } from "./testbench/ToBeCameraPanel";
+import type { WorkbenchMode } from "./testbench/camera_test_types";
 import "./App.css";
 
 function App() {
   const runtimeCapabilities = useMemo(() => getRuntimeCapabilities(), []);
+  const [activeMode, setActiveMode] = useState<WorkbenchMode>("as-is");
 
   return (
     <main className="camera-workbench">
@@ -20,10 +23,17 @@ function App() {
           <span>isSecureContext: {String(runtimeCapabilities.isSecureContext)}</span>
           <span>getUserMedia: {String(runtimeCapabilities.getUserMedia)}</span>
         </div>
+        <label className="field mode-select">
+          <span>테스트 방식</span>
+          <select value={activeMode} onChange={(event) => setActiveMode(event.target.value as WorkbenchMode)}>
+            <option value="as-is">AS-IS</option>
+            <option value="to-be">TO-BE</option>
+          </select>
+        </label>
       </div>
 
       <div className="comparison-grid">
-        <AsIsCameraPanel />
+        {activeMode === "as-is" ? <AsIsCameraPanel key="as-is" /> : <ToBeCameraPanel key="to-be" />}
       </div>
     </main>
   );

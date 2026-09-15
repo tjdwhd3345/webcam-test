@@ -30,3 +30,15 @@ export interface CameraPolicyDecisionView {
   passed: boolean;
   reasons: string[];
 }
+
+export interface CameraValidationView {
+  valid: boolean;
+  settings: MediaTrackSettings;
+}
+
+export interface CameraPreparationDetailsView {
+  selectionReason: string;
+  facingAssessment: "environment" | "user" | "unknown";
+  resolutionAttempt: string;
+  validation: CameraValidationView;
+}

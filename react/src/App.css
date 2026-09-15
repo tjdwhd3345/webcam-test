@@ -135,6 +135,45 @@
   margin-bottom: 16px;
 }
 
+.strict-mode-control {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 12px;
+  color: var(--text-h);
+  border: 1px solid #99f6e4;
+  border-radius: 6px;
+  background: #f0fdfa;
+  cursor: pointer;
+}
+
+.strict-mode-control input {
+  width: 18px;
+  height: 18px;
+  margin: 1px 0 0;
+  accent-color: #0f766e;
+}
+
+.strict-mode-control input:focus-visible {
+  outline: 2px solid #0f766e;
+  outline-offset: 2px;
+}
+
+.strict-mode-control span {
+  display: grid;
+  gap: 3px;
+}
+
+.strict-mode-control strong {
+  font-size: 13px;
+}
+
+.strict-mode-control small {
+  color: var(--text);
+  font-size: 12px;
+}
+
 .field {
   display: grid;
   grid-column: 1 / -1;
@@ -282,6 +321,82 @@ select {
   max-height: 300px;
   overflow: auto;
   padding-right: 2px;
+}
+
+.decision-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.decision-table {
+  width: 100%;
+  border-collapse: collapse;
+  color: var(--text-h);
+  font-size: 12px;
+}
+
+.decision-table th,
+.decision-table td {
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.decision-table th {
+  background: var(--social-bg);
+  font-weight: 700;
+}
+
+.decision-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.validation-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 7px;
+  font-size: 11px;
+  font-weight: 750;
+  border-radius: 999px;
+}
+
+.validation-badge.pass {
+  color: #166534;
+  background: #dcfce7;
+}
+
+.validation-badge.fail {
+  color: #991b1b;
+  background: #fee2e2;
+}
+
+.preparation-result,
+.validation-result {
+  padding: 12px;
+  border: 1px solid #99f6e4;
+  border-radius: 6px;
+  background: #f0fdfa;
+}
+
+.preparation-result dl {
+  margin-top: 0;
+}
+
+.preparation-result dl div {
+  grid-template-columns: 72px minmax(0, 1fr);
+}
+
+.validation-result > div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  color: var(--text-h);
+  font-size: 13px;
 }
 
 .device-row {

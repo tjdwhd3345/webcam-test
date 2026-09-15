@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { RawMediaDevice, WorkbenchMode } from "./camera_test_types";
+import type {
+  CameraPolicyDecisionView,
+  CameraPreparationDetailsView,
+  CameraValidationView,
+  RawMediaDevice,
+  WorkbenchMode,
+} from "./camera_test_types";
 import { getStreamSnapshot, getVideoInputDevices, toErrorMessage } from "./camera_test_utils";
 
 type CameraAction = "permission" | "rear" | "devices" | "selected" | null;
@@ -30,11 +36,18 @@ export interface CameraPanelProps {
   isStreaming: boolean;
   automaticRequestInfo?: Record<string, unknown>;
   getManualRequestInfo?: (device: RawMediaDevice) => Record<string, unknown>;
+  requireEnvironmentCamera?: boolean;
+  policyDecisions?: CameraPolicyDecisionView[];
+  preparationDetails?: CameraPreparationDetailsView | null;
+  manualValidation?: CameraValidationView | null;
+  manualActionLabel?: string;
   onRequestPermission: () => Promise<PermissionState | "unknown">;
   onEnumerateDevices: () => Promise<RawMediaDevice[]>;
   onStartAutomatic: () => Promise<void>;
   onStartManualDevice: (device: RawMediaDevice) => Promise<void>;
   onStop: () => void;
+  onRequireEnvironmentCameraChange?: (checked: boolean) => void;
+  onVideoPlayFailure?: (error: unknown, stream: MediaStream) => string | null;
 }
 
 const formatJson = (value: unknown): string => JSON.stringify(value, null, 2);
@@ -59,14 +72,20 @@ const createDefaultManualRequestInfo = (device: RawMediaDevice): Record<string, 
   },
 });
 
-function useVideoElement(stream: MediaStream | null) {
+function useVideoElement(stream: MediaStream | null, onVideoPlayFailure?: (error: unknown, stream: MediaStream) => void) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
-    if (videoRef.current) {
-      videoRef.current.srcObject = stream;
-    }
-  }, [stream]);
+    const video = videoRef.current;
+    if (!video) return;
+
+    video.srcObject = stream;
+    if (!stream || !onVideoPlayFailure) return;
+
+    void video.play().catch((error: unknown) => {
+      onVideoPlayFailure(error, stream);
+    });
+  }, [onVideoPlayFailure, stream]);
 
   return videoRef;
 }
@@ -162,14 +181,71 @@ function MediaDeviceList({ devices, selectedDeviceId }: { devices: RawMediaDevic
   );
 }
 
-function StreamPreview({ stream, label }: { stream: MediaStream | null; label: string }) {
-  const videoRef = useVideoElement(stream);
+function StreamPreview({
+  stream,
+  label,
+  onVideoPlayFailure,
+}: {
+  stream: MediaStream | null;
+  label: string;
+  onVideoPlayFailure?: (error: unknown, stream: MediaStream) => void;
+}) {
+  const videoRef = useVideoElement(stream, onVideoPlayFailure);
 
   return (
     <div className="preview-panel">
       <video ref={videoRef} playsInline muted autoPlay />
       {!stream ? <div className="empty-preview">{label}</div> : null}
     </div>
+  );
+}
+
+function PolicyDecisionTable({ decisions }: { decisions: CameraPolicyDecisionView[] }) {
+  if (decisions.length === 0) return null;
+
+  return (
+    <section className="data-section">
+      <div className="section-title">
+        <h3>정책 결정</h3>
+        <span>{decisions.length}</span>
+      </div>
+      <div className="decision-table-wrap">
+        <table className="decision-table" aria-label="카메라 정책 결정">
+          <thead>
+            <tr>
+              <th>장치</th>
+              <th>방향</th>
+              <th>판정</th>
+              <th>이유</th>
+            </tr>
+          </thead>
+          <tbody>
+            {decisions.map((decision) => (
+              <tr key={decision.device.deviceId || decision.device.label}>
+                <td>{decision.device.label}</td>
+                <td>{decision.facingAssessment}</td>
+                <td>
+                  <span className={`validation-badge ${decision.passed ? "pass" : "fail"}`}>{decision.passed ? "PASS" : "FAIL"}</span>
+                </td>
+                <td>{decision.reasons.join(", ")}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function ValidationResult({ title, validation }: { title: string; validation: CameraValidationView }) {
+  return (
+    <section className="validation-result" aria-label={title}>
+      <div>
+        <strong>{title}</strong>
+        <span className={`validation-badge ${validation.valid ? "pass" : "fail"}`}>{validation.valid ? "valid" : "invalid"}</span>
+      </div>
+      <pre>{formatJson(validation.settings)}</pre>
+    </section>
   );
 }
 
@@ -183,11 +259,18 @@ export function CameraPanel({
   isStreaming,
   automaticRequestInfo,
   getManualRequestInfo = createDefaultManualRequestInfo,
+  requireEnvironmentCamera,
+  policyDecisions = [],
+  preparationDetails,
+  manualValidation,
+  manualActionLabel = "선택 장치 재생",
   onRequestPermission,
   onEnumerateDevices,
   onStartAutomatic,
   onStartManualDevice,
   onStop,
+  onRequireEnvironmentCameraChange,
+  onVideoPlayFailure,
 }: CameraPanelProps) {
   const [status, setStatus] = useState<PanelStatus>({
     permission: "unknown",
@@ -263,13 +346,13 @@ export function CameraPanel({
   };
 
   const handleStartAutomatic = () => {
-    patchStatus({ requestInfo: automaticRequestInfo ?? { mode, action: "rear-camera" } });
+    patchStatus({ owner: null, requestInfo: automaticRequestInfo ?? { mode, action: "rear-camera" } });
     void runAction("rear", onStartAutomatic, "rear");
   };
 
   const handlePlaySelected = () => {
     if (!selectedRawDevice) return;
-    patchStatus({ requestInfo: getManualRequestInfo(selectedRawDevice) });
+    patchStatus({ owner: null, requestInfo: getManualRequestInfo(selectedRawDevice) });
     void runAction("selected", () => onStartManualDevice(selectedRawDevice), "selected");
   };
 
@@ -277,6 +360,14 @@ export function CameraPanel({
     onStop();
     patchStatus({ owner: null, error: null });
   };
+
+  const handleVideoPlayFailure = useCallback(
+    (error: unknown, failedStream: MediaStream) => {
+      const message = onVideoPlayFailure?.(error, failedStream);
+      if (message) patchStatus({ error: message });
+    },
+    [onVideoPlayFailure, patchStatus],
+  );
 
   return (
     <section className="camera-panel" data-mode={mode}>
@@ -296,6 +387,21 @@ export function CameraPanel({
         </div>
       ) : null}
 
+      {onRequireEnvironmentCameraChange ? (
+        <label className="strict-mode-control">
+          <input
+            type="checkbox"
+            aria-label="모바일 후면 카메라 강제"
+            checked={requireEnvironmentCamera === true}
+            onChange={(event) => onRequireEnvironmentCameraChange(event.target.checked)}
+          />
+          <span>
+            <strong>모바일 후면 카메라 강제</strong>
+            <small>후면으로 검증된 장치와 exact 제약만 허용합니다.</small>
+          </span>
+        </label>
+      ) : null}
+
       <div className="control-grid">
         <button type="button" onClick={handlePermission} disabled={status.action !== null}>
           {status.action === "permission" ? "권한 확인 중" : "카메라 권한"}
@@ -313,7 +419,7 @@ export function CameraPanel({
           onChange={(deviceId) => patchStatus({ selectedDeviceId: deviceId })}
         />
         <button type="button" onClick={handlePlaySelected} disabled={status.action !== null || !selectedRawDevice}>
-          {status.action === "selected" ? "선택 실행 중" : "선택 장치 재생"}
+          {status.action === "selected" ? "선택 실행 중" : manualActionLabel}
         </button>
         <button type="button" className="secondary" onClick={handleStop} disabled={!isStreaming && !stream}>
           정지
@@ -321,7 +427,7 @@ export function CameraPanel({
       </div>
 
       <div className="panel-body">
-        <StreamPreview stream={stream} label={`${title} preview`} />
+        <StreamPreview stream={stream} label={`${title} preview`} onVideoPlayFailure={onVideoPlayFailure ? handleVideoPlayFailure : undefined} />
 
         <div className="info-stack">
           <section className="data-section">
@@ -331,6 +437,39 @@ export function CameraPanel({
             </div>
             <MediaDeviceList devices={status.mediaDevices} selectedDeviceId={status.selectedDeviceId} />
           </section>
+
+          <PolicyDecisionTable decisions={policyDecisions} />
+
+          {preparationDetails ? (
+            <section className="preparation-result" aria-label="준비 결과">
+              <div className="section-title">
+                <h3>production 준비 결과</h3>
+                <span className={`validation-badge ${preparationDetails.validation.valid ? "pass" : "fail"}`}>
+                  {preparationDetails.validation.valid ? "PASS" : "FAIL"}
+                </span>
+              </div>
+              <dl>
+                <div>
+                  <dt>선택</dt>
+                  <dd>선택 사유: {preparationDetails.selectionReason}</dd>
+                </div>
+                <div>
+                  <dt>방향</dt>
+                  <dd>방향 판정: {preparationDetails.facingAssessment}</dd>
+                </div>
+                <div>
+                  <dt>해상도</dt>
+                  <dd>해상도 시도: {preparationDetails.resolutionAttempt}</dd>
+                </div>
+                <div>
+                  <dt>검증</dt>
+                  <dd>스트림 검증: {preparationDetails.validation.valid ? "valid" : "invalid"}</dd>
+                </div>
+              </dl>
+            </section>
+          ) : null}
+
+          {manualValidation ? <ValidationResult title="직접 재생 검증" validation={manualValidation} /> : null}
 
           <section className="data-section">
             <div className="section-title">
