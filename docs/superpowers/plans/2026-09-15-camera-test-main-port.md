@@ -327,17 +327,17 @@ git commit --only react/src/tobe/lib/hook react/src/lib/hook/useIdcardCameraStre
 
 - [ ] **Step 1: Write the failing AS-IS panel test**
 
-Render AsIsCameraPanel with the real AS-IS hook. Replace only navigator.mediaDevices and navigator.permissions, because those are the external browser boundary. Make getUserMedia return a complete fake MediaStream whose live video track has 1920×1080 settings. Click 후면 카메라 실행 and assert the rendered status changes to playing with 1920x1080. Also assert the external getUserMedia request contains:
+Render AsIsCameraPanel with the real AS-IS hook. Replace only navigator.mediaDevices and navigator.permissions, because those are the external browser boundary. Make getUserMedia return a complete fake MediaStream whose live video track has 1920×1080 settings. Click 후면 카메라 실행 and assert the rendered status changes to playing with 1920x1080. Also assert the final external getUserMedia request contains the constraints derived from the AS-IS hook options:
 
 ~~~tsx
-expect(startStream).toHaveBeenCalledWith(
-  expect.objectContaining({
-    video: expect.objectContaining({ facingMode: "environment" }),
-    audio: false,
-    retryCount: 3,
-    retryDelay: 1000,
+expect(getUserMedia).toHaveBeenLastCalledWith({
+  video: expect.objectContaining({
+    facingMode: { ideal: "environment" },
+    width: { ideal: 1920, min: 1920 },
+    height: { ideal: 1080, min: 1080 },
   }),
-);
+  audio: false,
+});
 ~~~
 
 Click 정지 and assert the fake track's stop method was called and the rendered status changes to stopped.
