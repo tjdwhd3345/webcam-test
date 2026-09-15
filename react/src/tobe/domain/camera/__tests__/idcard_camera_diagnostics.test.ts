@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { CameraDeviceInfo } from "@tobe/lib/auth/types/camera";
 import { maskCameraDeviceId, summarizeCameraDevice, summarizeCameraError, summarizeCameraSettings, summarizeMediaStreamConstraints } from "../idcard_camera_diagnostics";
 

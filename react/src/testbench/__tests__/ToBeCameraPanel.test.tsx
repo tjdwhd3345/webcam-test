@@ -13,11 +13,13 @@ type FakeTrack = {
 
 const createDeferred = <T,>() => {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((resolvePromise) => {
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
     resolve = resolvePromise;
+    reject = rejectPromise;
   });
 
-  return { promise, resolve };
+  return { promise, reject, resolve };
 };
 
 const getRenderedExecution = (): HTMLElement => {
@@ -187,8 +189,16 @@ describe("ToBeCameraPanel", () => {
     await user.click(screen.getByRole("button", { name: "카메라 목록 조회" }));
 
     const decisions = await screen.findByRole("table", { name: "카메라 정책 결정" });
-    expect(within(decisions).getByText("verified_environment")).toBeInTheDocument();
-    expect(within(decisions).getByText("excluded_by_label")).toBeInTheDocument();
+    const rows = within(decisions).getAllByRole("row");
+    expect(rows).toHaveLength(3);
+    expect(rows[1]).toHaveTextContent("Back Camera");
+    expect(rows[1]).toHaveTextContent("environment");
+    expect(rows[1]).toHaveTextContent("PASS");
+    expect(rows[1]).toHaveTextContent("verified_environment");
+    expect(rows[2]).toHaveTextContent("Back Ultra Wide Camera");
+    expect(rows[2]).toHaveTextContent("environment");
+    expect(rows[2]).toHaveTextContent("FAIL");
+    expect(rows[2]).toHaveTextContent("excluded_by_label");
   });
 
   it("자동 스트림을 수동 스트림으로 넘기고 교체 및 unmount 때 현재 owner만 정리한다", async () => {
@@ -220,6 +230,16 @@ describe("ToBeCameraPanel", () => {
 
     expect(automaticTrack.stop).toHaveBeenCalledTimes(1);
     expect(await screen.findByText("실행: selected")).toBeInTheDocument();
+    const manualValidation = screen.getByRole("region", { name: "직접 재생 검증" });
+    expect(within(manualValidation).getByText("valid")).toBeInTheDocument();
+    expect(manualValidation).toHaveTextContent('"deviceId": "back-main"');
+    expect(manualValidation).toHaveTextContent('"facingMode": "environment"');
+    expect(manualValidation).toHaveTextContent('"width": 1920');
+    expect(manualValidation).toHaveTextContent('"height": 1080');
+    const settingsSection = screen.getByRole("heading", { name: "settings" }).closest("section");
+    expect(settingsSection).toHaveTextContent('"deviceId": "back-main"');
+    expect(settingsSection).toHaveTextContent('"width": 1920');
+    expect(settingsSection).toHaveTextContent('"height": 1080');
 
     await user.click(screen.getByRole("button", { name: "선택 장치 직접 재생 (진단)" }));
     expect(firstManualTrack.stop).toHaveBeenCalledTimes(1);
@@ -252,6 +272,75 @@ describe("ToBeCameraPanel", () => {
     await user.click(screen.getByRole("button", { name: "선택 장치 직접 재생 (진단)" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("직접 재생 video.play 실패: Error: manual play rejected");
+  });
+
+  it("교체된 자동 스트림의 늦은 video.play 거절을 표시하지 않는다", async () => {
+    const automaticPlay = createDeferred<void>();
+    const automaticTrack = createVideoTrack();
+    const manualTrack = createVideoTrack();
+    const getUserMedia = vi.fn(async (constraints: MediaStreamConstraints) => {
+      if (constraints.video === true) return createMediaStream(createVideoTrack().track, "permission-stream");
+
+      const video = constraints.video as MediaTrackConstraints;
+      return video.width
+        ? createMediaStream(automaticTrack.track, "stale-automatic-stream")
+        : createMediaStream(manualTrack.track, "current-manual-stream");
+    });
+    installBrowserBoundary(getUserMedia);
+    vi.spyOn(HTMLMediaElement.prototype, "play")
+      .mockImplementationOnce(() => automaticPlay.promise)
+      .mockResolvedValue(undefined);
+    const user = userEvent.setup();
+
+    render(<ToBeCameraPanel />);
+    await user.click(screen.getByRole("checkbox", { name: "모바일 후면 카메라 강제" }));
+    await user.click(screen.getByRole("button", { name: "후면 카메라 실행" }));
+    expect(await screen.findByText("실행: rear")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "카메라 목록 조회" }));
+    await user.click(screen.getByRole("button", { name: "선택 장치 직접 재생 (진단)" }));
+    expect(await screen.findByText("실행: selected")).toBeInTheDocument();
+
+    await act(async () => {
+      automaticPlay.reject(new Error("stale automatic play rejected"));
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(getRenderedExecution()).toHaveTextContent("current-manual-stream");
+  });
+
+  it("교체된 수동 스트림의 늦은 video.play 거절을 표시하지 않는다", async () => {
+    const firstManualPlay = createDeferred<void>();
+    const firstManualTrack = createVideoTrack();
+    const secondManualTrack = createVideoTrack();
+    let manualRequestCount = 0;
+    const getUserMedia = vi.fn(async () => {
+      manualRequestCount += 1;
+      return createMediaStream(
+        manualRequestCount === 1 ? firstManualTrack.track : secondManualTrack.track,
+        `manual-stream-${manualRequestCount}`,
+      );
+    });
+    installBrowserBoundary(getUserMedia);
+    vi.spyOn(HTMLMediaElement.prototype, "play")
+      .mockImplementationOnce(() => firstManualPlay.promise)
+      .mockResolvedValue(undefined);
+    const user = userEvent.setup();
+
+    render(<ToBeCameraPanel />);
+    await user.click(screen.getByRole("button", { name: "카메라 목록 조회" }));
+    await user.click(screen.getByRole("button", { name: "선택 장치 직접 재생 (진단)" }));
+    expect(await screen.findByText("실행: selected")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "선택 장치 직접 재생 (진단)" }));
+    await waitFor(() => expect(getRenderedExecution()).toHaveTextContent("manual-stream-2"));
+
+    await act(async () => {
+      firstManualPlay.reject(new Error("stale manual play rejected"));
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(getRenderedExecution()).toHaveTextContent("manual-stream-2");
   });
 
   it("pending 자동 요청을 정지한 뒤 시작한 manual만 owner가 되고 늦은 자동 스트림은 정리한다", async () => {

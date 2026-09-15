@@ -4,6 +4,7 @@ import { idcardCameraConsoleLogger } from "../idcard_camera_console_logger";
 describe("idcardCameraConsoleLogger", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
   });
 
   it("테스트 환경에서는 console 출력을 남기지 않는다", () => {
