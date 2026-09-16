@@ -26,10 +26,10 @@ const createMediaDeviceInfo = ({ deviceId, label, capabilities }: { deviceId: st
   } as InputDeviceInfo;
 };
 
-const createProbeStream = (settings: MediaTrackSettings = {}): MediaStream => {
+const createProbeStream = (settings: MediaTrackSettings = {}, capabilities: MediaTrackCapabilities = {}): MediaStream => {
   const track = {
     readyState: "live",
-    getCapabilities: () => ({}),
+    getCapabilities: () => capabilities,
     getSettings: () => settings,
     stop: vi.fn(),
   } as unknown as MediaStreamTrack;
@@ -79,6 +79,25 @@ describe("MediaDevicesCameraGateway", () => {
     expect(cameras.map(({ deviceId, facingMode }) => ({ deviceId, facingMode }))).toEqual([
       { deviceId: "capability-rear", facingMode: "environment" },
       { deviceId: "capability-front", facingMode: "user" },
+    ]);
+  });
+
+  it("InputDeviceInfo capabilities의 deviceId가 달라도 열거된 deviceId를 보존한다", async () => {
+    const { gateway } = createGateway([
+      createMediaDeviceInfo({
+        deviceId: "enumerated-camera-id",
+        label: "Camera",
+        capabilities: { deviceId: "capabilities-camera-id" },
+      }),
+    ]);
+
+    const cameras = await gateway.enumerateVideoInputs({ probeCapabilities: false });
+
+    expect(cameras).toEqual([
+      expect.objectContaining({
+        deviceId: "enumerated-camera-id",
+        capabilities: expect.objectContaining({ deviceId: "capabilities-camera-id" }),
+      }),
     ]);
   });
 
@@ -152,6 +171,20 @@ describe("MediaDevicesCameraGateway", () => {
       expect.objectContaining({
         deviceId: "unknown-camera",
         facingMode: undefined,
+      }),
+    ]);
+  });
+
+  it("desktop legacy probe의 settings와 capabilities deviceId가 달라도 열거된 deviceId를 보존한다", async () => {
+    const probeStream = createProbeStream({ deviceId: "settings-camera-id" }, { deviceId: "capabilities-camera-id" });
+    const { gateway } = createGateway([createMediaDeviceInfo({ deviceId: "enumerated-camera-id", label: "Camera" })], probeStream);
+
+    const cameras = await gateway.enumerateVideoInputs({ probeCapabilities: true });
+
+    expect(cameras).toEqual([
+      expect.objectContaining({
+        deviceId: "enumerated-camera-id",
+        capabilities: expect.objectContaining({ deviceId: "capabilities-camera-id" }),
       }),
     ]);
   });

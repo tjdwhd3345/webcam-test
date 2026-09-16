@@ -330,7 +330,8 @@ select {
 }
 
 .decision-table {
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
   border-collapse: collapse;
   color: var(--text-h);
   font-size: 12px;
@@ -342,6 +343,7 @@ select {
   border-bottom: 1px solid var(--border);
   text-align: left;
   vertical-align: top;
+  white-space: nowrap;
 }
 
 .decision-table th {

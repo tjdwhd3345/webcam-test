@@ -101,7 +101,7 @@ export class MediaDevicesCameraGateway {
       const capabilities = inputDevice.getCapabilities();
 
       return {
-        deviceId: capabilities.deviceId || device.deviceId,
+        deviceId: device.deviceId,
         label: device.label,
         facingMode: this.resolveFacingMode(device.label, capabilities.facingMode),
         capabilities,
@@ -119,7 +119,7 @@ export class MediaDevicesCameraGateway {
     const { capabilities, settings } = await this.getVideoDeviceCapabilities(device.deviceId);
 
     return {
-      deviceId: settings.deviceId || capabilities?.deviceId || device.deviceId,
+      deviceId: device.deviceId,
       label: device.label,
       facingMode: this.resolveFacingMode(device.label, capabilities?.facingMode ?? (settings.facingMode ? [settings.facingMode] : undefined)),
       capabilities,
