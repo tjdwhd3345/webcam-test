@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IdcardCameraPolicy } from "@tobe/domain/camera/idcard_camera_policy";
-import { mapBrowserErrorToIdcardCameraError } from "@tobe/domain/camera/camera_errors";
+import { IdcardCameraError, mapBrowserErrorToIdcardCameraError } from "@tobe/domain/camera/camera_errors";
 import type { CameraDeviceInfo } from "@tobe/lib/auth/types/camera";
 import { MediaDevicesCameraGateway } from "@tobe/infrastructure/camera/media_devices_camera_gateway";
 import { useIdcardCameraStream } from "@tobe/lib/hook/useIdcardCameraStream";
@@ -75,11 +75,26 @@ export function ToBeCameraPanel() {
     return runCameraOperation(async () => {
       if (!mountedRef.current || operationId !== operationIdRef.current) return [];
       try {
+        const permission = await gateway.queryPermission();
+        if (!mountedRef.current || operationId !== operationIdRef.current) return [];
+        if (permission === "denied") throw new IdcardCameraError("camera_permission_denied");
+
+        if (permission === "prompt") {
+          let bootstrap: MediaStream | null = null;
+          try {
+            bootstrap = await gateway.requestPermission({ video: true, audio: false });
+          } finally {
+            gateway.stopStream(bootstrap);
+          }
+          if (!mountedRef.current || operationId !== operationIdRef.current) return [];
+        }
+
         const nextDevices = await gateway.enumerateVideoInputs({ probeCapabilities: !requireEnvironmentCamera });
         if (!mountedRef.current || operationId !== operationIdRef.current) return [];
         setDevices(nextDevices);
         return nextDevices.map(toRawMediaDevice);
       } catch (error) {
+        if (!mountedRef.current || operationId !== operationIdRef.current) return [];
         throw mapBrowserErrorToIdcardCameraError(error);
       }
     });
@@ -132,15 +147,23 @@ export function ToBeCameraPanel() {
 
       return runCameraOperation(async () => {
         if (!mountedRef.current || operationId !== operationIdRef.current) return;
-        const requestedDevice: CameraDeviceInfo = {
-          deviceId: rawDevice.deviceId,
-          label: rawDevice.label,
-          facingMode: rawDevice.facingMode,
-          capabilities: rawDevice.capabilities,
-        };
         let stream: MediaStream | null = null;
         try {
-          stream = await gateway.openStream(toExactDeviceConstraints(rawDevice));
+          const nextDevices = await gateway.enumerateVideoInputs({ probeCapabilities: false });
+          if (!mountedRef.current || operationId !== operationIdRef.current) return;
+          setDevices(nextDevices);
+
+          const requestedDevice = rawDevice.deviceId
+            ? nextDevices.find((device) => device.deviceId === rawDevice.deviceId)
+            : undefined;
+          if (!requestedDevice) {
+            throw new IdcardCameraError(
+              "camera_not_found",
+              "선택한 카메라를 찾을 수 없습니다. 카메라 목록을 다시 조회해 주세요.",
+            );
+          }
+
+          stream = await gateway.openStream(toExactDeviceConstraints(toRawMediaDevice(requestedDevice)));
 
           if (!mountedRef.current || operationId !== operationIdRef.current) {
             gateway.stopStream(stream);
@@ -148,7 +171,7 @@ export function ToBeCameraPanel() {
           }
 
           const validation = policy.validateStream(stream, {
-            devices,
+            devices: nextDevices,
             requestedDevice,
             requireEnvironmentCamera,
           });
@@ -163,7 +186,7 @@ export function ToBeCameraPanel() {
         }
       });
     },
-    [devices, gateway, policy, releaseManualStream, requireEnvironmentCamera, stopStream],
+    [gateway, policy, releaseManualStream, requireEnvironmentCamera, stopStream],
   );
 
   const handleVideoPlayFailure = useCallback(

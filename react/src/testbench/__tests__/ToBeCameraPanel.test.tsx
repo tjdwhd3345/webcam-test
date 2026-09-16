@@ -171,6 +171,68 @@ describe("ToBeCameraPanel", () => {
     expect(screen.getByText("권한: granted")).toBeInTheDocument();
   });
 
+  it("장치 목록 조회는 prompt 권한을 먼저 획득하고 bootstrap을 정리한 뒤 열거한다", async () => {
+    const bootstrapTrack = createVideoTrack();
+    const getUserMedia = vi.fn(async () => createMediaStream(bootstrapTrack.track, "enumeration-bootstrap"));
+    const { enumerateDevices } = installBrowserBoundary(getUserMedia);
+    vi.spyOn(navigator.permissions, "query").mockResolvedValue({ state: "prompt" } as PermissionStatus);
+
+    render(<ToBeCameraPanel />);
+    await userEvent.click(screen.getByRole("button", { name: "카메라 목록 조회" }));
+
+    expect(getUserMedia).toHaveBeenCalledWith({ video: true, audio: false });
+    expect(bootstrapTrack.stop).toHaveBeenCalledTimes(1);
+    expect(enumerateDevices).toHaveBeenCalledAfter(getUserMedia);
+  });
+
+  it("빈 deviceId만 열거되면 직접 재생을 비활성화한다", async () => {
+    const { enumerateDevices } = installBrowserBoundary(vi.fn());
+    enumerateDevices.mockResolvedValue([createInputDevice("", "Hidden Camera")]);
+
+    render(<ToBeCameraPanel />);
+    await userEvent.click(screen.getByRole("button", { name: "카메라 목록 조회" }));
+
+    expect(screen.getByRole("button", { name: "선택 장치 직접 재생 (진단)" })).toBeDisabled();
+  });
+
+  it("직접 재생 직전에 선택한 장치를 다시 열거하고 현재 exact ID를 연다", async () => {
+    const manualTrack = createVideoTrack();
+    const getUserMedia = vi.fn(async () => createMediaStream(manualTrack.track, "current-manual-stream"));
+    const { enumerateDevices } = installBrowserBoundary(getUserMedia);
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+
+    render(<ToBeCameraPanel />);
+    await userEvent.click(screen.getByRole("button", { name: "카메라 목록 조회" }));
+    await userEvent.click(screen.getByRole("button", { name: "선택 장치 직접 재생 (진단)" }));
+
+    expect(enumerateDevices).toHaveBeenCalledTimes(2);
+    expect(getUserMedia).toHaveBeenLastCalledWith({
+      video: expect.objectContaining({ deviceId: { exact: "back-main" } }),
+      audio: false,
+    });
+  });
+
+  it("직접 재생 전 새 목록에 선택 ID가 없으면 재조회를 안내하고 stale exact 요청을 보내지 않는다", async () => {
+    const getUserMedia = vi.fn(async () => createMediaStream(createVideoTrack().track, "unexpected-manual-stream"));
+    const { enumerateDevices } = installBrowserBoundary(getUserMedia);
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+    enumerateDevices
+      .mockResolvedValueOnce([createInputDevice("back-main", "Back Camera")])
+      .mockResolvedValueOnce([createInputDevice("back-replacement", "Replacement Back Camera")]);
+
+    render(<ToBeCameraPanel />);
+    await userEvent.click(screen.getByRole("button", { name: "카메라 목록 조회" }));
+    await userEvent.click(screen.getByRole("button", { name: "선택 장치 직접 재생 (진단)" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("camera_not_found");
+    expect(alert).toHaveTextContent("카메라 목록을 다시 조회");
+    expect(getUserMedia).not.toHaveBeenCalledWith({
+      video: expect.objectContaining({ deviceId: { exact: "back-main" } }),
+      audio: false,
+    });
+  });
+
   it.each(["permission", "enumeration"])("%s 진단은 기존 owner를 먼저 해제하여 probe와 겹치지 않는다", async (action) => {
     const live = new Set<MediaStreamTrack>();
     let peak = 0;

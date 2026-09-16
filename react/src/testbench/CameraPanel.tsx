@@ -103,7 +103,7 @@ function DeviceSelect({
   disabled: boolean;
   onChange: (deviceId: string) => void;
 }) {
-  const videoDevices = getVideoInputDevices(devices);
+  const videoDevices = getVideoInputDevices(devices).filter((device) => device.deviceId.length > 0);
 
   return (
     <label className="field">
@@ -293,7 +293,8 @@ export function CameraPanel({
     setStatus((previous) => ({ ...previous, ...updates }));
   }, []);
   const videoDevices = useMemo(() => getVideoInputDevices(status.mediaDevices), [status.mediaDevices]);
-  const selectedRawDevice = videoDevices.find((device) => device.deviceId === status.selectedDeviceId) ?? null;
+  const selectableVideoDevices = useMemo(() => videoDevices.filter((device) => device.deviceId.length > 0), [videoDevices]);
+  const selectedRawDevice = selectableVideoDevices.find((device) => device.deviceId === status.selectedDeviceId) ?? null;
   const snapshot = useMemo(() => getStreamSnapshot(stream), [stream]);
   const executionInfo = useMemo(
     () => ({
@@ -349,11 +350,14 @@ export function CameraPanel({
     void runAction("devices", async (isCurrent) => {
       const devices = await onEnumerateDevices();
       if (!isCurrent()) return;
-      const nextVideoDevices = getVideoInputDevices(devices);
-      patchStatus({
+      const nextVideoDevices = getVideoInputDevices(devices).filter((device) => device.deviceId.length > 0);
+      setStatus((previous) => ({
+        ...previous,
         mediaDevices: devices,
-        selectedDeviceId: status.selectedDeviceId || nextVideoDevices[0]?.deviceId || "",
-      });
+        selectedDeviceId: nextVideoDevices.some((device) => device.deviceId === previous.selectedDeviceId)
+          ? previous.selectedDeviceId
+          : nextVideoDevices[0]?.deviceId ?? "",
+      }));
     });
   };
 
