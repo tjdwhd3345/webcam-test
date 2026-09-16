@@ -106,13 +106,13 @@ describe("App", () => {
   it("선택한 모드의 패널만 mount한다", async () => {
     render(<App />);
 
-    expect(screen.getByRole("heading", { name: "AS-IS" })).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "TO-BE" })).not.toBeInTheDocument();
-
-    await userEvent.selectOptions(screen.getByRole("combobox", { name: "테스트 방식" }), "to-be");
-
-    expect(screen.queryByRole("heading", { name: "AS-IS" })).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "TO-BE" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "AS-IS" })).not.toBeInTheDocument();
+
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "테스트 방식" }), "as-is");
+
+    expect(screen.queryByRole("heading", { name: "TO-BE" })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "AS-IS" })).toBeInTheDocument();
   });
 
   it("TO-BE의 active 및 pending manual stream을 mode switch로 정리하고 AS-IS만 유지한다", async () => {
@@ -137,7 +137,6 @@ describe("App", () => {
 
     render(<App />);
     const modeSelect = screen.getByRole("combobox", { name: "테스트 방식" });
-    await user.selectOptions(modeSelect, "to-be");
     await user.click(screen.getByRole("button", { name: "카메라 목록 조회" }));
     await user.click(screen.getByRole("button", { name: "선택 장치 직접 재생 (진단)" }));
     expect(await screen.findByText("스트림: playing")).toBeInTheDocument();

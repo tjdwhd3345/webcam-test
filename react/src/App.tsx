@@ -7,7 +7,7 @@ import "./App.css";
 
 function App() {
   const runtimeCapabilities = useMemo(() => getRuntimeCapabilities(), []);
-  const [activeMode, setActiveMode] = useState<WorkbenchMode>("as-is");
+  const [activeMode, setActiveMode] = useState<WorkbenchMode>("to-be");
 
   return (
     <main className="camera-workbench">
