@@ -131,11 +131,10 @@ export class IdcardCameraPolicy {
   }
 
   public createMediaStreamConstraints(device: CameraDeviceInfo | null, resolution: IdcardCameraResolution, requireEnvironmentCamera = false): MediaStreamConstraints {
-    const requireEnvironmentFacing = requireEnvironmentCamera && this.assessDeviceFacing(device) === "environment";
     const video: ExtendedMediaTrackConstraints = {
       width: { ideal: resolution.width, min: resolution.width },
       height: { ideal: resolution.height, min: resolution.height },
-      facingMode: requireEnvironmentFacing ? { exact: this.preferredFacingMode } : { ideal: this.preferredFacingMode },
+      facingMode: { ideal: this.preferredFacingMode },
       focusMode: { ideal: "continuous" },
       whiteBalanceMode: { ideal: "continuous" },
       zoom: { ideal: 1 },

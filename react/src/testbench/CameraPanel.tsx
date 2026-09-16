@@ -413,7 +413,7 @@ export function CameraPanel({
           />
           <span>
             <strong>모바일 후면 카메라 강제</strong>
-            <small>확인된 전면은 제외합니다. 후면은 exact, 방향 미상 호환 후보는 ideal 제약으로 시도합니다.</small>
+            <small>선택 장치는 exact로 고정하고 후면 방향은 ideal로 요청한 뒤 실제 스트림을 검증합니다.</small>
           </span>
         </label>
       ) : null}

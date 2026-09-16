@@ -383,7 +383,7 @@ describe("PrepareIdcardCameraStream", () => {
         video: expect.objectContaining({
           width: { ideal: 1280, min: 1280 },
           height: { ideal: 720, min: 720 },
-          facingMode: { exact: "environment" },
+          facingMode: { ideal: "environment" },
           deviceId: { exact: "main" },
         }),
       }),
@@ -398,7 +398,7 @@ describe("PrepareIdcardCameraStream", () => {
         video: expect.objectContaining({
           width: { ideal: 1920, min: 1920 },
           height: { ideal: 1080, min: 1080 },
-          facingMode: { exact: "environment" },
+          facingMode: { ideal: "environment" },
           deviceId: { exact: "main" },
         }),
       }),
@@ -608,7 +608,7 @@ describe("PrepareIdcardCameraStream", () => {
           status: "requested",
           resolutionAttempt: "preferred",
           constraints: expect.objectContaining({
-            video: expect.objectContaining({ deviceId: { exact: maskCameraDeviceId("main-camera-id") }, facingMode: { exact: "environment" } }),
+            video: expect.objectContaining({ deviceId: { exact: maskCameraDeviceId("main-camera-id") }, facingMode: { ideal: "environment" } }),
           }),
         }),
       },

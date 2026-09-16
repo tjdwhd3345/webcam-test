@@ -295,7 +295,7 @@ describe("ToBeCameraPanel", () => {
     expect(getUserMedia).toHaveBeenLastCalledWith({
       video: expect.objectContaining({
         deviceId: { exact: "back-main" },
-        facingMode: { exact: "environment" },
+        facingMode: { ideal: "environment" },
       }),
       audio: false,
     });

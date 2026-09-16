@@ -151,13 +151,13 @@ describe("IdcardCameraPolicy", () => {
     });
   });
 
-  it("모바일에서 확인된 후면 후보는 방향과 선택 장치를 exact로 요구한다", () => {
+  it("모바일에서 확인된 후면 후보는 선택 장치를 exact로 고정하고 후면을 ideal로 요청한다", () => {
     const device: CameraDeviceInfo = { deviceId: "main", label: "Back Camera", facingMode: "environment" };
 
     expect(policy.createMediaStreamConstraints(device, IDCARD_CAMERA_PREFERRED_RESOLUTION, true)).toEqual(
       expect.objectContaining({
         video: expect.objectContaining({
-          facingMode: { exact: "environment" },
+          facingMode: { ideal: "environment" },
           deviceId: { exact: "main" },
         }),
         audio: false,
