@@ -26,7 +26,7 @@ describe("IdcardCameraPolicy", () => {
     expect(policy.selectVideoInputDevices(devices)).toEqual([{ deviceId: "back", label: "Back Camera", facingMode: "environment" }]);
   });
 
-  it("ultra/tele/triple 후면 카메라는 제외한다", () => {
+  it("ultra/tele 및 zoom 근거가 없는 triple 후면 카메라는 제외한다", () => {
     const devices: CameraDeviceInfo[] = [
       { deviceId: "ultra", label: "Back Ultra Wide Camera", facingMode: "environment" },
       { deviceId: "tele", label: "Back Tele Camera", facingMode: "environment" },
@@ -74,6 +74,60 @@ describe("IdcardCameraPolicy", () => {
     ]);
   });
 
+  it("zoom 1을 포함하는 Triple 가상 후면 카메라는 근접 초점 후보로 허용한다", () => {
+    const devices: CameraDeviceInfo[] = [
+      {
+        deviceId: "triple-en",
+        label: "Back Triple Camera",
+        facingMode: "environment",
+        capabilities: { zoom: { min: 0.5, max: 10 } } as MediaTrackCapabilities,
+      },
+      {
+        deviceId: "triple-ko",
+        label: "후면 트리플 카메라",
+        facingMode: "environment",
+        capabilities: { zoom: { min: 1, max: 10 } } as MediaTrackCapabilities,
+      },
+      {
+        deviceId: "triple-max-one",
+        label: "Back Triple Camera",
+        facingMode: "environment",
+        capabilities: { zoom: { min: 0.5, max: 1 } } as MediaTrackCapabilities,
+      },
+    ];
+
+    expect(policy.selectVideoInputDevices(devices)).toEqual(devices);
+  });
+
+  it.each([
+    {
+      caseName: "전면 장치",
+      device: { deviceId: "triple-user", label: "Triple Camera", facingMode: "user", capabilities: { zoom: { min: 0.5, max: 10 } } as MediaTrackCapabilities },
+    },
+    {
+      caseName: "방향을 확인할 수 없는 장치",
+      device: { deviceId: "triple-unknown", label: "Triple Camera", capabilities: { zoom: { min: 0.5, max: 10 } } as MediaTrackCapabilities },
+    },
+    {
+      caseName: "zoom.min이 없는 장치",
+      device: { deviceId: "triple-without-min", label: "Back Triple Camera", facingMode: "environment", capabilities: { zoom: { max: 10 } } as MediaTrackCapabilities },
+    },
+    {
+      caseName: "zoom.max가 없는 장치",
+      device: { deviceId: "triple-without-max", label: "Back Triple Camera", facingMode: "environment", capabilities: { zoom: { min: 0.5 } } as MediaTrackCapabilities },
+    },
+    {
+      caseName: "zoom.max가 1보다 작은 장치",
+      device: { deviceId: "triple-below-one", label: "Back Triple Camera", facingMode: "environment", capabilities: { zoom: { min: 0.5, max: 0.9 } } as MediaTrackCapabilities },
+    },
+    {
+      caseName: "zoom.min이 1보다 큰 장치",
+      device: { deviceId: "triple-above-one", label: "Back Triple Camera", facingMode: "environment", capabilities: { zoom: { min: 1.1, max: 10 } } as MediaTrackCapabilities },
+    },
+  ])("$caseName Triple은 adaptive 후보로 허용하지 않는다", ({ device }) => {
+    expect(policy.selectVideoInputDevices([device as CameraDeviceInfo])).toEqual([]);
+  });
+
   it("Facing back:N 후보 중 숫자가 낮은 후면 카메라를 우선 선택한다", () => {
     const devices: CameraDeviceInfo[] = [
       { deviceId: "back-2", label: "Facing back:2", facingMode: "environment" },
@@ -103,11 +157,42 @@ describe("IdcardCameraPolicy", () => {
 
   it("Facing back:N 후보가 하나라도 있으면 일반 label보다 우선 선택한다", () => {
     const devices: CameraDeviceInfo[] = [
-      { deviceId: "plain", label: "Back Camera", facingMode: "environment" },
       { deviceId: "back-2", label: "Facing back:2", facingMode: "environment" },
+      {
+        deviceId: "triple",
+        label: "Back Triple Camera",
+        facingMode: "environment",
+        capabilities: { zoom: { min: 0.5, max: 10 } } as MediaTrackCapabilities,
+      },
     ];
 
     expect(policy.selectPreferredDevice(devices)).toEqual({ deviceId: "back-2", label: "Facing back:2", facingMode: "environment" });
+  });
+
+  it("adaptive Triple 후보를 열거 순서와 관계없이 일반 Dual/Back보다 우선 선택한다", () => {
+    const triple: CameraDeviceInfo = {
+      deviceId: "triple",
+      label: "Back Triple Camera",
+      facingMode: "environment",
+      capabilities: { zoom: { min: 0.5, max: 10 } } as MediaTrackCapabilities,
+    };
+    const devices: CameraDeviceInfo[] = [
+      triple,
+      {
+        deviceId: "dual",
+        label: "Back Dual Camera",
+        facingMode: "environment",
+        capabilities: { zoom: { min: 1, max: 10 } } as MediaTrackCapabilities,
+      },
+      {
+        deviceId: "main",
+        label: "Back Camera",
+        facingMode: "environment",
+        capabilities: { zoom: { min: 1, max: 10 } } as MediaTrackCapabilities,
+      },
+    ];
+
+    expect(policy.selectPreferredDevice(policy.selectVideoInputDevices(devices))).toBe(triple);
   });
 
   it("Facing back:N 후보가 없으면 기존처럼 마지막 후면 후보를 선택한다", () => {

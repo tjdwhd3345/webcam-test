@@ -45,6 +45,10 @@ type ExtendedMediaTrackConstraints = MediaTrackConstraints & {
   zoom?: { ideal: number };
 };
 
+const EXCLUDED_CAMERA_LABEL_PATTERN = /ultra|울트라|wide|와이드|광각|tele|망원|triple|트리플/i;
+// iOS/WebKit의 Triple 논리 장치는 zoom 1 화각을 유지하면서 근접 시 구성 렌즈를 전환할 수 있다.
+const ADAPTIVE_VIRTUAL_CAMERA_LABEL_PATTERN = /triple|트리플/i;
+
 export const IDCARD_CAMERA_PREFERRED_RESOLUTION: IdcardCameraResolution = {
   attempt: "preferred",
   width: 1920,
@@ -194,17 +198,31 @@ export class IdcardCameraPolicy {
 
   private getCameraExclusionReasons(device: CameraDeviceInfo): IdcardCameraDeviceSelectionReason[] {
     const zoomMin = (device.capabilities as { zoom?: { min?: number } } | undefined)?.zoom?.min;
+    const isAdaptiveVirtualCamera = this.isAdaptiveVirtualCamera(device);
     const reasons: IdcardCameraDeviceSelectionReason[] = [];
 
-    if (/ultra|울트라|wide|와이드|광각|tele|망원|triple|트리플/i.test(device.label)) {
+    if (!isAdaptiveVirtualCamera && EXCLUDED_CAMERA_LABEL_PATTERN.test(device.label)) {
       reasons.push("excluded_by_label");
     }
 
-    if (typeof zoomMin === "number" && zoomMin < 1) {
+    if (!isAdaptiveVirtualCamera && typeof zoomMin === "number" && zoomMin < 1) {
       reasons.push("excluded_by_zoom_min");
     }
 
     return reasons;
+  }
+
+  private isAdaptiveVirtualCamera(device: CameraDeviceInfo): boolean {
+    const zoom = (device.capabilities as { zoom?: { min?: number; max?: number } } | undefined)?.zoom;
+
+    return (
+      this.assessDeviceFacing(device) === "environment" &&
+      ADAPTIVE_VIRTUAL_CAMERA_LABEL_PATTERN.test(device.label) &&
+      typeof zoom?.min === "number" &&
+      typeof zoom.max === "number" &&
+      zoom.min <= 1 &&
+      zoom.max >= 1
+    );
   }
 
   private getFacingBackIndex(label: string): number | null {
@@ -222,6 +240,13 @@ export class IdcardCameraPolicy {
 
     if (aFacingBackIndex !== null) return -1;
     if (bFacingBackIndex !== null) return 1;
+
+    const aIsAdaptiveVirtualCamera = this.isAdaptiveVirtualCamera(a.device);
+    const bIsAdaptiveVirtualCamera = this.isAdaptiveVirtualCamera(b.device);
+
+    if (aIsAdaptiveVirtualCamera !== bIsAdaptiveVirtualCamera) {
+      return aIsAdaptiveVirtualCamera ? -1 : 1;
+    }
 
     return b.index - a.index;
   }

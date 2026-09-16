@@ -274,6 +274,56 @@ describe("PrepareIdcardCameraStream", () => {
     });
   });
 
+  it("모바일은 adaptive Triple을 선택해 exact deviceId와 zoom 1로 실행하고 진단에 기록한다", async () => {
+    const triple: CameraDeviceInfo = {
+      deviceId: "triple-camera-id",
+      label: "후면 트리플 카메라",
+      facingMode: "environment",
+      capabilities: { zoom: { min: 0.5, max: 10 } } as MediaTrackCapabilities,
+    };
+    const devices: CameraDeviceInfo[] = [
+      triple,
+      {
+        deviceId: "dual-camera-id",
+        label: "후면 듀얼 카메라",
+        facingMode: "environment",
+        capabilities: { zoom: { min: 1, max: 10 } } as MediaTrackCapabilities,
+      },
+      {
+        deviceId: "main-camera-id",
+        label: "후면 카메라",
+        facingMode: "environment",
+        capabilities: { zoom: { min: 1, max: 10 } } as MediaTrackCapabilities,
+      },
+    ];
+    const gateway = createGateway({
+      enumerateVideoInputs: createEnumerateVideoInputsMock(devices),
+      openStream: createOpenStreamMock(createStream({ deviceId: triple.deviceId, facingMode: "environment", width: 1920, height: 1080, zoom: 1 })),
+    });
+    const { diagnosticLogger, events } = createDiagnosticLogger();
+    const usecase = createUsecase(gateway, undefined, diagnosticLogger);
+
+    const result = await usecase.execute({ target: "idcard_front", requireEnvironmentCamera: true });
+
+    expect(result.selectedDevice).toBe(triple);
+    expect(gateway.openStream).toHaveBeenCalledWith(
+      expect.objectContaining({
+        video: expect.objectContaining({
+          deviceId: { exact: triple.deviceId },
+          facingMode: { ideal: "environment" },
+          zoom: { ideal: 1 },
+        }),
+      }),
+    );
+    expect(events).toContainEqual({
+      channel: "candidates",
+      payload: expect.objectContaining({
+        selectionSource: "policy_priority",
+        selectedDevice: expect.objectContaining({ deviceId: maskCameraDeviceId(triple.deviceId), label: triple.label, zoom: { min: 0.5, max: 10 } }),
+      }),
+    });
+  });
+
   it("최종 스트림이 user로 확인되면 종료하고 전면 감지 오류로 실패한다", async () => {
     const finalStream = createStream({ deviceId: "unknown", facingMode: "user", width: 1920, height: 1080 });
     const gateway = createGateway({
