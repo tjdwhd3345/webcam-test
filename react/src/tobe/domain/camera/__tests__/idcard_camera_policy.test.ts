@@ -204,6 +204,21 @@ describe("IdcardCameraPolicy", () => {
     expect(policy.selectPreferredDevice(devices)).toEqual({ deviceId: "back-b", label: "Back Camera B", facingMode: "environment" });
   });
 
+  it("허용 후보 전체를 기존 카메라 우선순위대로 정렬한다", () => {
+    const backA: CameraDeviceInfo = { deviceId: "back-a", label: "Back Camera A", facingMode: "environment" };
+    const back2: CameraDeviceInfo = { deviceId: "back-2", label: "Facing back:2", facingMode: "environment" };
+    const triple: CameraDeviceInfo = {
+      deviceId: "triple",
+      label: "Back Triple Camera",
+      facingMode: "environment",
+      capabilities: { zoom: { min: 0.5, max: 10 } } as MediaTrackCapabilities,
+    };
+    const back0: CameraDeviceInfo = { deviceId: "back-0", label: "Facing back:0", facingMode: "environment" };
+    const backB: CameraDeviceInfo = { deviceId: "back-b", label: "Back Camera B", facingMode: "environment" };
+
+    expect(policy.orderPreferredDevices([backA, back2, triple, back0, backB])).toEqual([back0, back2, triple, backB, backA]);
+  });
+
   it("preferred/fallback 해상도 제약을 생성한다", () => {
     const device: CameraDeviceInfo = { deviceId: "main", label: "Back Camera", facingMode: "environment" };
     const [preferred, fallback] = policy.getResolutionCandidates();

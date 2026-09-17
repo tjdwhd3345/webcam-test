@@ -86,6 +86,20 @@ const getConstraintFailure = (error: unknown): { errorName: "OverconstrainedErro
   };
 };
 
+const isCandidateRetryableError = (error: IdcardCameraError): boolean => {
+  switch (error.code) {
+    case "camera_front_facing_detected":
+    case "camera_environment_not_available":
+    case "camera_not_found":
+    case "camera_resolution_not_supported":
+    case "camera_constraint_not_supported":
+    case "camera_stream_invalid":
+      return true;
+    default:
+      return false;
+  }
+};
+
 export class PrepareIdcardCameraStream {
   private readonly gateway: IdcardCameraGateway;
   private readonly policy: IdcardCameraPolicy;
@@ -196,110 +210,123 @@ export class PrepareIdcardCameraStream {
     });
 
     const candidates = decisions.filter(({ passed }) => passed).map(({ device }) => device);
-    const selectedDevice = this.policy.selectPreferredDevice(candidates);
+    const orderedCandidates = this.policy.orderPreferredDevices(candidates);
+    const preferredDevice = orderedCandidates[0] ?? null;
     this.debug("candidates", {
       ...eventBase,
-      count: candidates.length,
-      devices: candidates.map((device, index) => summarizeCameraDevice(device, index)),
-      selectedDevice: selectedDevice ? summarizeCameraDevice(selectedDevice) : null,
-      selectionSource: selectedDevice ? "policy_priority" : "none",
+      count: orderedCandidates.length,
+      devices: orderedCandidates.map((device, index) => summarizeCameraDevice(device, index)),
+      selectedDevice: preferredDevice ? summarizeCameraDevice(preferredDevice) : null,
+      selectionSource: preferredDevice ? "policy_priority" : "none",
     });
 
-    if (!selectedDevice) {
+    if (!preferredDevice) {
       throw new IdcardCameraError("camera_not_found");
     }
 
     const resolutions = this.policy.getResolutionCandidates();
     let lastError: unknown;
 
-    for (const resolution of resolutions) {
-      const constraints = this.policy.createMediaStreamConstraints(selectedDevice, resolution, requireEnvironmentCamera);
-      this.debug("getUserMedia", {
-        ...eventBase,
-        stage: "final_stream",
-        status: "requested",
-        resolutionAttempt: resolution.attempt,
-        requestedDevice: summarizeCameraDevice(selectedDevice),
-        constraints: summarizeMediaStreamConstraints(constraints),
-      });
-      let streamAcquired = false;
-
-      try {
-        const stream = await this.gateway.openStream(constraints);
-        streamAcquired = true;
-        const validation = this.policy.validateStream(stream, { devices, requestedDevice: selectedDevice, requireEnvironmentCamera });
-        const facingAssessment = this.policy.assessStreamFacing(validation.settings, devices, selectedDevice);
-        const actualEnumeratedDevice = this.policy.findSelectedDevice(devices, validation.settings);
-        const actualCandidateDevice = this.policy.findSelectedDevice(candidates, validation.settings);
-
+    candidateLoop: for (const candidate of orderedCandidates) {
+      for (const resolution of resolutions) {
+        const constraints = this.policy.createMediaStreamConstraints(candidate, resolution, requireEnvironmentCamera);
         this.debug("getUserMedia", {
           ...eventBase,
           stage: "final_stream",
-          status: "succeeded",
+          status: "requested",
           resolutionAttempt: resolution.attempt,
+          requestedDevice: summarizeCameraDevice(candidate),
           constraints: summarizeMediaStreamConstraints(constraints),
-          settings: summarizeCameraSettings(validation.settings),
         });
-        this.debug("selection", {
-          ...eventBase,
-          phase: "final_stream_validation",
-          resolutionAttempt: resolution.attempt,
-          requestedDevice: summarizeCameraDevice(selectedDevice),
-          actualDevice: actualEnumeratedDevice ? summarizeCameraDevice(actualEnumeratedDevice) : null,
-          actualDeviceIsCandidate: actualCandidateDevice !== null,
-          deviceIdMatched: !!validation.settings.deviceId && validation.settings.deviceId === selectedDevice.deviceId,
-          facingAssessment,
-          settings: summarizeCameraSettings(validation.settings),
-          passed: validation.valid,
-        });
+        let stream: MediaStream | null = null;
+        let streamAcquired = false;
 
-        if (!validation.valid) {
-          this.gateway.stopStream(stream);
-          if (requireEnvironmentCamera && facingAssessment === "user") {
-            const detectionSource = validation.settings.facingMode === "user" ? "track_settings" : "enumerated_device";
-            this.throwFrontFacingDetected(eventBase, "final_stream", validation.settings, constraints, detectionSource, resolution.attempt);
-          }
-          throw new IdcardCameraError("camera_stream_invalid");
-        }
+        try {
+          stream = await this.gateway.openStream(constraints);
+          streamAcquired = true;
+          const validation = this.policy.validateStream(stream, { devices, requestedDevice: candidate, requireEnvironmentCamera });
+          const facingAssessment = this.policy.assessStreamFacing(validation.settings, devices, candidate);
+          const actualEnumeratedDevice = this.policy.findSelectedDevice(devices, validation.settings);
+          const actualCandidateDevice = this.policy.findSelectedDevice(orderedCandidates, validation.settings);
 
-        const actualDevice = this.policy.findSelectedDevice(candidates, validation.settings) ?? selectedDevice;
-        const selectionReason = this.policy.getSelectionReason(selectedDevice, requireEnvironmentCamera);
-        this.emit({
-          ...eventBase,
-          type: "device_selected",
-          selectionReason,
-          constraints,
-          settings: validation.settings,
-          resolutionAttempt: resolution.attempt,
-        });
-
-        return {
-          stream,
-          selectedDevice: actualDevice,
-          actualSettings: validation.settings,
-          resolutionAttempt: resolution.attempt,
-          selectionReason,
-          facingAssessment,
-        };
-      } catch (error) {
-        lastError = error;
-        if (!streamAcquired) {
           this.debug("getUserMedia", {
             ...eventBase,
             stage: "final_stream",
-            status: "failed",
+            status: "succeeded",
             resolutionAttempt: resolution.attempt,
             constraints: summarizeMediaStreamConstraints(constraints),
-            error: summarizeCameraError(error),
+            settings: summarizeCameraSettings(validation.settings),
           });
-        }
-        this.emitConstraintFailure(eventBase, "final_stream", constraints, error, resolution.attempt);
+          this.debug("selection", {
+            ...eventBase,
+            phase: "final_stream_validation",
+            resolutionAttempt: resolution.attempt,
+            requestedDevice: summarizeCameraDevice(candidate),
+            actualDevice: actualEnumeratedDevice ? summarizeCameraDevice(actualEnumeratedDevice) : null,
+            actualDeviceIsCandidate: actualCandidateDevice !== null,
+            deviceIdMatched: !!validation.settings.deviceId && validation.settings.deviceId === candidate.deviceId,
+            facingAssessment,
+            settings: summarizeCameraSettings(validation.settings),
+            passed: validation.valid,
+          });
 
-        if (resolution.attempt === "preferred" && isWidthHeightOverconstrainedError(error)) {
-          continue;
-        }
+          if (!validation.valid) {
+            this.gateway.stopStream(stream);
+            stream = null;
+            if (requireEnvironmentCamera && facingAssessment === "user") {
+              const detectionSource = validation.settings.facingMode === "user" ? "track_settings" : "enumerated_device";
+              this.throwFrontFacingDetected(eventBase, "final_stream", validation.settings, constraints, detectionSource, resolution.attempt);
+            }
+            throw new IdcardCameraError("camera_stream_invalid");
+          }
 
-        throw mapBrowserErrorToIdcardCameraError(error);
+          const actualDevice = this.policy.findSelectedDevice(orderedCandidates, validation.settings) ?? candidate;
+          const selectionReason = this.policy.getSelectionReason(candidate, requireEnvironmentCamera);
+          this.emit({
+            ...eventBase,
+            type: "device_selected",
+            selectionReason,
+            constraints,
+            settings: validation.settings,
+            resolutionAttempt: resolution.attempt,
+          });
+
+          return {
+            stream,
+            selectedDevice: actualDevice,
+            actualSettings: validation.settings,
+            resolutionAttempt: resolution.attempt,
+            selectionReason,
+            facingAssessment,
+          };
+        } catch (error) {
+          lastError = error;
+          if (stream) {
+            this.gateway.stopStream(stream);
+          }
+          if (!streamAcquired) {
+            this.debug("getUserMedia", {
+              ...eventBase,
+              stage: "final_stream",
+              status: "failed",
+              resolutionAttempt: resolution.attempt,
+              constraints: summarizeMediaStreamConstraints(constraints),
+              error: summarizeCameraError(error),
+            });
+          }
+          this.emitConstraintFailure(eventBase, "final_stream", constraints, error, resolution.attempt);
+
+          if (resolution.attempt === "preferred" && isWidthHeightOverconstrainedError(error)) {
+            continue;
+          }
+
+          const cameraError = mapBrowserErrorToIdcardCameraError(error);
+          if (!isCandidateRetryableError(cameraError)) {
+            throw cameraError;
+          }
+
+          continue candidateLoop;
+        }
       }
     }
 

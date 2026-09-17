@@ -457,6 +457,96 @@ describe("PrepareIdcardCameraStream", () => {
     });
   });
 
+  it("우선 후보의 두 해상도가 실패하면 다음 허용 후보를 preferred 해상도로 요청한다", async () => {
+    const devices: CameraDeviceInfo[] = [
+      { deviceId: "back-2", label: "Facing back:2", facingMode: "environment" },
+      { deviceId: "back-0", label: "Facing back:0", facingMode: "environment" },
+    ];
+    const fallbackDeviceStream = createStream({ deviceId: "back-2", facingMode: "environment", width: 1920, height: 1080 });
+    const gateway = createGateway({
+      enumerateVideoInputs: createEnumerateVideoInputsMock(devices),
+      openStream: vi
+        .fn()
+        .mockRejectedValueOnce(createConstraintError("OverconstrainedError", "width"))
+        .mockRejectedValueOnce(createConstraintError("OverconstrainedError", "height"))
+        .mockResolvedValueOnce(fallbackDeviceStream),
+    });
+    const usecase = createUsecase(gateway);
+
+    const result = await usecase.execute({ target: "idcard_back", requireEnvironmentCamera: true });
+
+    expect(result).toMatchObject({ selectedDevice: devices[0], resolutionAttempt: "preferred" });
+    expect(gateway.openStream).toHaveBeenCalledTimes(3);
+    expect(gateway.openStream).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        video: expect.objectContaining({ deviceId: { exact: "back-0" }, width: { ideal: 1920, min: 1920 }, height: { ideal: 1080, min: 1080 } }),
+      }),
+    );
+    expect(gateway.openStream).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        video: expect.objectContaining({ deviceId: { exact: "back-0" }, width: { ideal: 1280, min: 1280 }, height: { ideal: 720, min: 720 } }),
+      }),
+    );
+    expect(gateway.openStream).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({
+        video: expect.objectContaining({ deviceId: { exact: "back-2" }, width: { ideal: 1920, min: 1920 }, height: { ideal: 1080, min: 1080 } }),
+      }),
+    );
+  });
+
+  it("우선 후보의 exact deviceId가 실패하면 해상도를 바꾸지 않고 다음 허용 후보를 요청한다", async () => {
+    const devices: CameraDeviceInfo[] = [
+      { deviceId: "back-2", label: "Facing back:2", facingMode: "environment" },
+      { deviceId: "back-0", label: "Facing back:0", facingMode: "environment" },
+    ];
+    const fallbackDeviceStream = createStream({ deviceId: "back-2", facingMode: "environment", width: 1920, height: 1080 });
+    const gateway = createGateway({
+      enumerateVideoInputs: createEnumerateVideoInputsMock(devices),
+      openStream: vi.fn().mockRejectedValueOnce(createConstraintError("OverconstrainedError", "deviceId")).mockResolvedValueOnce(fallbackDeviceStream),
+    });
+    const usecase = createUsecase(gateway);
+
+    const result = await usecase.execute({ target: "idcard_back", requireEnvironmentCamera: true });
+
+    expect(result.selectedDevice).toBe(devices[0]);
+    expect(gateway.openStream).toHaveBeenCalledTimes(2);
+    expect(gateway.openStream).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ video: expect.objectContaining({ deviceId: { exact: "back-0" }, width: { ideal: 1920, min: 1920 } }) }),
+    );
+    expect(gateway.openStream).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ video: expect.objectContaining({ deviceId: { exact: "back-2" }, width: { ideal: 1920, min: 1920 } }) }),
+    );
+  });
+
+  it("검증에 실패한 후보 스트림을 종료한 뒤 다음 허용 후보를 실행한다", async () => {
+    const devices: CameraDeviceInfo[] = [
+      { deviceId: "back-2", label: "Facing back:2", facingMode: "environment" },
+      { deviceId: "back-0", label: "Facing back:0", facingMode: "environment" },
+    ];
+    const mismatchedStream = createStream({ deviceId: "back-2", facingMode: "environment", width: 1920, height: 1080 });
+    const fallbackDeviceStream = createStream({ deviceId: "back-2", facingMode: "environment", width: 1920, height: 1080 });
+    const gateway = createGateway({
+      enumerateVideoInputs: createEnumerateVideoInputsMock(devices),
+      openStream: vi.fn().mockResolvedValueOnce(mismatchedStream).mockResolvedValueOnce(fallbackDeviceStream),
+    });
+    const usecase = createUsecase(gateway);
+
+    const result = await usecase.execute({ target: "idcard_back", requireEnvironmentCamera: true });
+
+    const failedStreamStopIndex = gateway.stopStream.mock.calls.findIndex(([stream]) => stream === mismatchedStream);
+    expect(result.stream).toBe(fallbackDeviceStream);
+    expect(result.selectedDevice).toBe(devices[0]);
+    expect(gateway.stopStream).toHaveBeenCalledWith(mismatchedStream);
+    expect(failedStreamStopIndex).toBeGreaterThanOrEqual(0);
+    expect(gateway.stopStream.mock.invocationCallOrder[failedStreamStopIndex]).toBeLessThan(gateway.openStream.mock.invocationCallOrder[1]);
+    expect(gateway.openStream).toHaveBeenCalledTimes(2);
+  });
+
   it("legacy ConstraintNotSatisfiedError의 constraintName=height도 해상도 fallback한다", async () => {
     const gateway = createGateway({
       openStream: vi

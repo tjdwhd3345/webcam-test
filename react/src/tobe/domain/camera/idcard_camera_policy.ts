@@ -118,7 +118,14 @@ export class IdcardCameraPolicy {
   }
 
   public selectPreferredDevice(devices: CameraDeviceInfo[]): CameraDeviceInfo | null {
-    return devices.map((device, index) => ({ device, index })).sort((a, b) => this.compareEnvironmentCameraPriority(a, b))[0]?.device ?? null;
+    return this.orderPreferredDevices(devices)[0] ?? null;
+  }
+
+  public orderPreferredDevices(devices: CameraDeviceInfo[]): CameraDeviceInfo[] {
+    return devices
+      .map((device, index) => ({ device, index }))
+      .sort((a, b) => this.compareEnvironmentCameraPriority(a, b))
+      .map(({ device }) => device);
   }
 
   public getSelectionReason(device: CameraDeviceInfo | null, requireEnvironmentCamera = false): IdcardCameraSelectionReason {
