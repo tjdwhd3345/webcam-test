@@ -45,9 +45,9 @@ type ExtendedMediaTrackConstraints = MediaTrackConstraints & {
   zoom?: { ideal: number };
 };
 
-const EXCLUDED_CAMERA_LABEL_PATTERN = /ultra|울트라|wide|와이드|광각|tele|망원|triple|트리플/i;
+const EXCLUDED_CAMERA_LABEL_PATTERN = /ultra|울트라|wide|와이드|광각|tele|망원|triple|트리플|広角|望遠|トリプル|广角|长焦|三镜头|廣角|三鏡頭|\brộng\b|\bchụp\s+xa\b|\bba\s+camera\b/i;
 // iOS/WebKit의 Triple 논리 장치는 zoom 1 화각을 유지하면서 근접 시 구성 렌즈를 전환할 수 있다.
-const ADAPTIVE_VIRTUAL_CAMERA_LABEL_PATTERN = /triple|트리플/i;
+const ADAPTIVE_VIRTUAL_CAMERA_LABEL_PATTERN = /triple|트리플|トリプル|三镜头|三鏡頭|\bba\s+camera\b/i;
 
 export const IDCARD_CAMERA_PREFERRED_RESOLUTION: IdcardCameraResolution = {
   attempt: "preferred",
