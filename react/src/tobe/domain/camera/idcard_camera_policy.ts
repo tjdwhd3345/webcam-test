@@ -226,7 +226,9 @@ export class IdcardCameraPolicy {
       this.assessDeviceFacing(device) === "environment" &&
       ADAPTIVE_VIRTUAL_CAMERA_LABEL_PATTERN.test(device.label) &&
       typeof zoom?.min === "number" &&
+      Number.isFinite(zoom.min) &&
       typeof zoom.max === "number" &&
+      Number.isFinite(zoom.max) &&
       zoom.min <= 1 &&
       zoom.max >= 1
     );

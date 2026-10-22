@@ -124,6 +124,42 @@ describe("IdcardCameraPolicy", () => {
       caseName: "zoom.min이 1보다 큰 장치",
       device: { deviceId: "triple-above-one", label: "Back Triple Camera", facingMode: "environment", capabilities: { zoom: { min: 1.1, max: 10 } } as MediaTrackCapabilities },
     },
+    {
+      caseName: "zoom.min이 음의 무한대인 장치",
+      device: {
+        deviceId: "triple-negative-infinite-min",
+        label: "Back Triple Camera",
+        facingMode: "environment",
+        capabilities: { zoom: { min: Number.NEGATIVE_INFINITY, max: 10 } } as MediaTrackCapabilities,
+      },
+    },
+    {
+      caseName: "zoom.max가 양의 무한대인 장치",
+      device: {
+        deviceId: "triple-positive-infinite-max",
+        label: "Back Triple Camera",
+        facingMode: "environment",
+        capabilities: { zoom: { min: 0.5, max: Number.POSITIVE_INFINITY } } as MediaTrackCapabilities,
+      },
+    },
+    {
+      caseName: "zoom.min이 NaN인 장치",
+      device: {
+        deviceId: "triple-nan-min",
+        label: "Back Triple Camera",
+        facingMode: "environment",
+        capabilities: { zoom: { min: Number.NaN, max: 10 } } as MediaTrackCapabilities,
+      },
+    },
+    {
+      caseName: "zoom.max가 NaN인 장치",
+      device: {
+        deviceId: "triple-nan-max",
+        label: "Back Triple Camera",
+        facingMode: "environment",
+        capabilities: { zoom: { min: 0.5, max: Number.NaN } } as MediaTrackCapabilities,
+      },
+    },
   ])("$caseName Triple은 adaptive 후보로 허용하지 않는다", ({ device }) => {
     expect(policy.selectVideoInputDevices([device as CameraDeviceInfo])).toEqual([]);
   });
