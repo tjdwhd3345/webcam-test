@@ -39,6 +39,36 @@ const localizedLabels = [
     triple: "Ba camera mặt sau",
     regular: ["Camera kép mặt sau", "Camera sau", "Camera trước"],
   },
+  {
+    language: "프랑스어",
+    excluded: ["Caméra ultra grand angle avant", "Double caméra grand angle arrière", "Caméra ultra grand angle arrière", "Caméra arrière de longue focale"],
+    triple: "Triple caméra arrière",
+    regular: ["Double caméra arrière", "Caméra arrière", "Caméra avant"],
+  },
+  {
+    language: "태국어",
+    excluded: ["กล้องด้านหน้าอัลตร้าไวด์", "กล้องคู่ด้านหลังมุมกว้าง", "กล้องด้านหลังอัลตร้าไวด์", "กล้องด้านหลังแบบภาพระยะไกล"],
+    triple: "กล้องด้านหลังสามกล้อง",
+    regular: ["กล้องคู่ด้านหลัง", "กล้องด้านหลัง", "กล้องด้านหน้า"],
+  },
+  {
+    language: "러시아어",
+    excluded: ["Передняя сверхширокоугольная камера", "Задняя двойная широкоугольная камера", "Задняя сверхширокоугольная камера", "Камера с задним телеобъективом"],
+    triple: "Задняя тройная камера",
+    regular: ["Задняя двойная камера", "Камера на задней панели", "Камера на передней панели"],
+  },
+  {
+    language: "인도네시아어",
+    excluded: ["Kamera Ultra Lebar Depan", "Kamera Lebar Belakang Ganda", "Kamera Ultra Lebar Belakang", "Kamera Telefoto Belakang"],
+    triple: "Tiga Kamera Belakang",
+    regular: ["Kamera Ganda Belakang", "Kamera Belakang", "Kamera Depan"],
+  },
+  {
+    language: "벵골어",
+    excluded: ["সামনের আলট্রা ওয়াইড ক্যামেরা", "পিছনের ডুয়াল ওয়াইড ক্যামেরা", "পিছনের আলট্রা ওয়াইড ক্যামেরা", "পিছনের টেলিফটো ক্যামেরা"],
+    triple: "পিছনের ট্রিপল ক্যামেরা",
+    regular: ["পিছনের ডুয়াল ক্যামেরা", "পিছনের ক্যামেরা", "সামনের ক্যামেরা"],
+  },
 ];
 
 const excludedCases = localizedLabels.flatMap(({ language, excluded }) => excluded.map((label) => ({ language, label })));
@@ -66,11 +96,11 @@ describe("IdcardCameraPolicy 다국어 라벨 필터", () => {
     expect(policy.selectVideoInputDevices([device])).toEqual([device]);
   });
 
-  it.each(localizedLabels)("$language Triple은 zoom 근거가 없으면 라벨로 제외한다", ({ triple }) => {
+  it.each(localizedLabels)("$language Triple은 zoom 근거가 없어도 라벨만으로 제외하지 않는다", ({ triple }) => {
     const device: CameraDeviceInfo = { deviceId: "triple-camera", label: triple, facingMode: "environment" };
 
     expect(policy.evaluateVideoInputDevices([device], true)).toEqual([
-      { device, facingAssessment: "environment", passed: false, reasons: ["excluded_by_label"] },
+      { device, facingAssessment: "environment", passed: true, reasons: ["verified_environment"] },
     ]);
   });
 
@@ -88,30 +118,32 @@ describe("IdcardCameraPolicy 다국어 라벨 필터", () => {
     expect(policy.orderPreferredDevices(candidates)).toEqual([tripleDevice, regularDevice]);
   });
 
-  it.each(localizedLabels)("$language Triple도 방향 또는 zoom 범위가 부적합하면 예외를 적용하지 않는다", ({ triple }) => {
-    const variants: Pick<CameraDeviceInfo, "facingMode" | "capabilities">[] = [
-      { facingMode: "user", capabilities: { zoom: { min: 0.5, max: 10 } } as MediaTrackCapabilities },
-      { capabilities: { zoom: { min: 0.5, max: 10 } } as MediaTrackCapabilities },
-      { facingMode: "environment", capabilities: { zoom: { max: 10 } } as MediaTrackCapabilities },
-      { facingMode: "environment", capabilities: { zoom: { min: 0.5 } } as MediaTrackCapabilities },
-      { facingMode: "environment", capabilities: { zoom: { min: 1.1, max: 10 } } as MediaTrackCapabilities },
-      { facingMode: "environment", capabilities: { zoom: { min: 0.5, max: 0.9 } } as MediaTrackCapabilities },
-      { facingMode: "environment", capabilities: { zoom: { min: Number.NEGATIVE_INFINITY, max: 10 } } as MediaTrackCapabilities },
-      { facingMode: "environment", capabilities: { zoom: { min: 0.5, max: Number.POSITIVE_INFINITY } } as MediaTrackCapabilities },
-      { facingMode: "environment", capabilities: { zoom: { min: Number.NaN, max: 10 } } as MediaTrackCapabilities },
-      { facingMode: "environment", capabilities: { zoom: { min: 0.5, max: Number.NaN } } as MediaTrackCapabilities },
+  it.each(localizedLabels)("$language 비adaptive Triple에는 일반 장치와 같은 방향·zoom 조건을 적용한다", ({ triple }) => {
+    const variants: (Pick<CameraDeviceInfo, "facingMode" | "capabilities"> & { passed: boolean; reasons: string[] })[] = [
+      { facingMode: "user", capabilities: { zoom: { min: 1, max: 10 } } as MediaTrackCapabilities, passed: false, reasons: ["front_camera_not_allowed"] },
+      { capabilities: { zoom: { min: 1, max: 10 } } as MediaTrackCapabilities, passed: true, reasons: ["mobile_unknown_compatibility"] },
+      { facingMode: "user", capabilities: { zoom: { min: 0.5, max: 10 } } as MediaTrackCapabilities, passed: false, reasons: ["excluded_by_zoom_min"] },
+      { capabilities: { zoom: { min: 0.5, max: 10 } } as MediaTrackCapabilities, passed: false, reasons: ["excluded_by_zoom_min"] },
+      { facingMode: "environment", capabilities: { zoom: { max: 10 } } as MediaTrackCapabilities, passed: true, reasons: ["verified_environment"] },
+      { facingMode: "environment", capabilities: { zoom: { min: 0.5 } } as MediaTrackCapabilities, passed: false, reasons: ["excluded_by_zoom_min"] },
+      { facingMode: "environment", capabilities: { zoom: { min: 1.1, max: 10 } } as MediaTrackCapabilities, passed: true, reasons: ["verified_environment"] },
+      { facingMode: "environment", capabilities: { zoom: { min: 0.5, max: 0.9 } } as MediaTrackCapabilities, passed: false, reasons: ["excluded_by_zoom_min"] },
+      { facingMode: "environment", capabilities: { zoom: { min: Number.NEGATIVE_INFINITY, max: 10 } } as MediaTrackCapabilities, passed: false, reasons: ["excluded_by_zoom_min"] },
+      { facingMode: "environment", capabilities: { zoom: { min: 0.5, max: Number.POSITIVE_INFINITY } } as MediaTrackCapabilities, passed: false, reasons: ["excluded_by_zoom_min"] },
+      { facingMode: "environment", capabilities: { zoom: { min: Number.NaN, max: 10 } } as MediaTrackCapabilities, passed: true, reasons: ["verified_environment"] },
+      { facingMode: "environment", capabilities: { zoom: { min: 0.5, max: Number.NaN } } as MediaTrackCapabilities, passed: false, reasons: ["excluded_by_zoom_min"] },
     ];
 
-    for (const variant of variants) {
+    for (const { passed, reasons, ...variant } of variants) {
       const device: CameraDeviceInfo = { deviceId: "invalid-triple", label: triple, ...variant };
       const [decision] = policy.evaluateVideoInputDevices([device], true);
 
-      expect(decision.passed).toBe(false);
-      expect(decision.reasons).toContain("excluded_by_label");
+      expect(decision.passed).toBe(passed);
+      expect(decision.reasons).toEqual(reasons);
     }
   });
 
-  it.each(["CAMERA CỰC RỘNG MẶT SAU", "Camera (chụp   xa) mặt sau", "BA   CAMERA mặt sau"])(
+  it.each(["CAMERA CỰC RỘNG MẶT SAU", "Camera (chụp   xa) mặt sau"])(
     "베트남어 대소문자·공백·괄호 변형 '%s'도 제외한다",
     (label) => {
       const device: CameraDeviceInfo = { deviceId: "excluded-variant", label };
@@ -122,13 +154,39 @@ describe("IdcardCameraPolicy 다국어 라벨 필터", () => {
     },
   );
 
-  it("베트남어 Triple 키워드를 일반 장치 이름의 일부에 잘못 적용하지 않는다", () => {
+  it.each([
+    "Caméra GRAND   ANGLE arrière",
+    "Caméra arrière de LONGUE   FOCALE",
+    "Задняя ШИРОКОУГОЛЬНАЯ камера",
+    "Камера с задним ТЕЛЕОБЪЕКТИВОМ",
+    "KAMERA LEBAR BELAKANG",
+  ])("추가 언어의 대소문자·공백 변형 '%s'도 제외한다", (label) => {
+    const device: CameraDeviceInfo = { deviceId: "localized-variant", label };
+    const [decision] = policy.evaluateVideoInputDevices([device]);
+
+    expect(decision.passed).toBe(false);
+    expect(decision.reasons).toContain("excluded_by_label");
+  });
+
+  it.each(["BA   CAMERA mặt sau", "TIGA   KAMERA Belakang"])("Triple의 대소문자·공백 변형 '%s'도 라벨만으로 제외하지 않는다", (label) => {
+    const device: CameraDeviceInfo = { deviceId: "triple-variant", label, facingMode: "environment" };
+
+    expect(policy.selectVideoInputDevices([device], true)).toEqual([device]);
+  });
+
+  it("일반 장치 이름을 Triple로 오인해 zoom 제외를 건너뛰지 않는다", () => {
     const devices: CameraDeviceInfo[] = [
       { deviceId: "toshiba", label: "Toshiba Camera" },
       { deviceId: "bailey", label: "Bailey Camera" },
       { deviceId: "xaver", label: "Camera Xaver" },
-    ];
+      { deviceId: "prestiga", label: "Prestiga Kamera" },
+      { deviceId: "tiger", label: "Tiger Kamera" },
+    ].map((device) => ({
+      ...device,
+      facingMode: "environment" as const,
+      capabilities: { zoom: { min: 0.5, max: 10 } } as MediaTrackCapabilities,
+    }));
 
-    expect(policy.selectVideoInputDevices(devices)).toEqual(devices);
+    expect(policy.selectVideoInputDevices(devices)).toEqual([]);
   });
 });

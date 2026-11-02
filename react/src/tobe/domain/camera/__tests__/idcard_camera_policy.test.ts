@@ -26,7 +26,7 @@ describe("IdcardCameraPolicy", () => {
     expect(policy.selectVideoInputDevices(devices)).toEqual([{ deviceId: "back", label: "Back Camera", facingMode: "environment" }]);
   });
 
-  it("ultra/tele 및 zoom 근거가 없는 triple 후면 카메라는 제외한다", () => {
+  it("ultra/tele은 제외하고 zoom 근거가 없는 triple은 후면 후보로 허용한다", () => {
     const devices: CameraDeviceInfo[] = [
       { deviceId: "ultra", label: "Back Ultra Wide Camera", facingMode: "environment" },
       { deviceId: "tele", label: "Back Tele Camera", facingMode: "environment" },
@@ -34,7 +34,10 @@ describe("IdcardCameraPolicy", () => {
       { deviceId: "main", label: "Back Camera", facingMode: "environment" },
     ];
 
-    expect(policy.selectVideoInputDevices(devices)).toEqual([{ deviceId: "main", label: "Back Camera", facingMode: "environment" }]);
+    expect(policy.selectVideoInputDevices(devices)).toEqual([
+      { deviceId: "triple", label: "Back Triple Camera", facingMode: "environment" },
+      { deviceId: "main", label: "Back Camera", facingMode: "environment" },
+    ]);
   });
 
   it("wide/광각 후면 카메라도 제외한다", () => {
@@ -160,8 +163,10 @@ describe("IdcardCameraPolicy", () => {
         capabilities: { zoom: { min: 0.5, max: Number.NaN } } as MediaTrackCapabilities,
       },
     },
-  ])("$caseName Triple은 adaptive 후보로 허용하지 않는다", ({ device }) => {
-    expect(policy.selectVideoInputDevices([device as CameraDeviceInfo])).toEqual([]);
+  ])("$caseName Triple에는 adaptive 우선순위를 적용하지 않는다", ({ device }) => {
+    const regularDevice: CameraDeviceInfo = { deviceId: "main", label: "Back Camera", facingMode: "environment" };
+
+    expect(policy.orderPreferredDevices([device as CameraDeviceInfo, regularDevice])).toEqual([regularDevice, device]);
   });
 
   it("Facing back:N 후보 중 숫자가 낮은 후면 카메라를 우선 선택한다", () => {

@@ -60,6 +60,44 @@ const createUsecase = (gateway: MockGateway, observer?: IdcardCameraPreparationO
   new PrepareIdcardCameraStream(gateway, undefined, observer, diagnosticLogger);
 
 describe("PrepareIdcardCameraStream", () => {
+  it.each([
+    {
+      language: "태국어",
+      labels: ["กล้องด้านหน้าอัลตร้าไวด์", "กล้องด้านหลังสามกล้อง", "กล้องคู่ด้านหลังมุมกว้าง", "กล้องด้านหลังอัลตร้าไวด์", "กล้องคู่ด้านหลัง", "กล้องด้านหลัง", "กล้องด้านหน้า", "กล้องด้านหลังแบบภาพระยะไกล"],
+    },
+    {
+      language: "러시아어",
+      labels: ["Передняя сверхширокоугольная камера", "Задняя тройная камера", "Задняя двойная широкоугольная камера", "Задняя сверхширокоугольная камера", "Задняя двойная камера", "Камера на задней панели", "Камера на передней панели", "Камера с задним телеобъективом"],
+    },
+  ])("$language 장치의 방향 정보가 없어도 자동 실행에서 망원을 열지 않고 일반 후면을 선택한다", async ({ labels }) => {
+    const deviceIds = ["front-ultra", "triple", "dual-wide", "rear-ultra", "dual", "main", "front", "tele"];
+    const devices: CameraDeviceInfo[] = labels.map((label, index) => ({ deviceId: deviceIds[index], label }));
+    const openedDeviceIds: string[] = [];
+    const gateway = createGateway({
+      enumerateVideoInputs: createEnumerateVideoInputsMock(devices),
+      openStream: vi.fn<IdcardCameraGateway["openStream"]>(async (constraints) => {
+        const video = constraints.video as MediaTrackConstraints;
+        const deviceId = (video.deviceId as ConstrainDOMStringParameters).exact as string;
+        openedDeviceIds.push(deviceId);
+        const settings: MediaTrackSettings & { zoom: number } = {
+          deviceId,
+          facingMode: deviceId.startsWith("front") ? "user" : "environment",
+          width: 1920,
+          height: 1080,
+          zoom: 1,
+        };
+        return createStream(settings);
+      }),
+    });
+
+    const result = await createUsecase(gateway).execute({ target: "idcard_front", requireEnvironmentCamera: true });
+
+    expect(result.selectedDevice).toEqual({ deviceId: "main", label: labels[5] });
+    expect(result.actualSettings).toMatchObject({ deviceId: "main", facingMode: "environment", zoom: 1 });
+    expect(openedDeviceIds).not.toContain("tele");
+    expect(gateway.enumerateVideoInputs).toHaveBeenCalledWith({ probeCapabilities: false });
+  });
+
   it("MediaDevices 미지원이면 실패한다", async () => {
     const gateway = createGateway({ isSupported: vi.fn(() => false) });
     const usecase = createUsecase(gateway);
@@ -272,6 +310,23 @@ describe("PrepareIdcardCameraStream", () => {
         selectedDevice: expect.objectContaining({ deviceId: maskCameraDeviceId("device-camera-0"), label: "camera 0, facing back" }),
       }),
     });
+  });
+
+  it("모바일은 zoom 정보가 없는 Triple도 후면 후보로 열 수 있다", async () => {
+    const triple: CameraDeviceInfo = { deviceId: "triple-camera-id", label: "후면 트리플 카메라", facingMode: "environment" };
+    const finalStream = createStream({ deviceId: triple.deviceId, facingMode: "environment", width: 1920, height: 1080 });
+    const gateway = createGateway({
+      enumerateVideoInputs: createEnumerateVideoInputsMock([triple]),
+      openStream: createOpenStreamMock(finalStream),
+    });
+
+    const result = await createUsecase(gateway).execute({ target: "idcard_front", requireEnvironmentCamera: true });
+
+    expect(result.selectedDevice).toBe(triple);
+    expect(result.stream).toBe(finalStream);
+    expect(gateway.openStream).toHaveBeenCalledWith(expect.objectContaining({
+      video: expect.objectContaining({ deviceId: { exact: triple.deviceId } }),
+    }));
   });
 
   it("모바일은 adaptive Triple을 선택해 exact deviceId와 zoom 1로 실행하고 진단에 기록한다", async () => {
