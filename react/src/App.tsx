@@ -22,6 +22,7 @@ function App() {
         <div className="runtime-status" aria-label="Browser media runtime status">
           <span>isSecureContext: {String(runtimeCapabilities.isSecureContext)}</span>
           <span>getUserMedia: {String(runtimeCapabilities.getUserMedia)}</span>
+          <span>language: {navigator.language}</span>
         </div>
         <label className="field mode-select">
           <span>테스트 방식</span>
